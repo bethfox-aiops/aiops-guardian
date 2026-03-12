@@ -1,1 +1,7 @@
 
+__pycache__/
+aiops_data/
+*.pkl
+*.bak
+*.csv
+*.pyc
