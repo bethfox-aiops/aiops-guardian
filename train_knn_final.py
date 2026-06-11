@@ -33,13 +33,16 @@ SCALER_FILE = "scaler.pkl"
 
 FEATURE_COLS = [
     "disk",
+    "disk_free_gb",
+    "disk_fill_rate_mb_min",
+    "inode_pct",
     "cpu",
     "mem",
     "net_kbps",
     "disk_w_kbps",
     "gpu_util",
     "gpu_mem_mib",
-    "gpu_temp_c"
+    "gpu_temp_c",
 ]
 
 print("[INFO] Loading collected data...")

@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 import pandas as pd
 import joblib
-from sklearn.ensemble import IsolationForest
+from pyod.models.iforest import IForest
 from sklearn.preprocessing import StandardScaler
 
 print("[INFO] Loading collected data...")
@@ -9,11 +10,11 @@ df = pd.read_csv("aiops_data/metrics.csv")
 
 print(f"[INFO] Loaded {len(df)} samples.")
 
-# Drop timestamp
-df = df.drop(columns=["timestamp"])
+if "timestamp" in df.columns:
+    df = df.drop(columns=["timestamp"])
 
 # Select features
-features = ['disk','cpu','mem','net_kbps','disk_w_kbps','gpu_util','gpu_mem_mib','gpu_temp_c']
+features = ['disk', 'disk_free_gb', 'disk_fill_rate_mb_min', 'inode_pct', 'cpu', 'mem', 'net_kbps', 'disk_w_kbps', 'gpu_util', 'gpu_mem_mib', 'gpu_temp_c']
 
 X = df[features]
 
@@ -25,7 +26,7 @@ X_scaled = scaler.fit_transform(X)
 
 print("[INFO] Training Isolation Forest anomaly detector...")
 
-model = IsolationForest(
+model = IForest(
     n_estimators=200,
     contamination=0.05,
     random_state=42

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-aiops-watchdog-knn.py
+aiops-watchdog-autoencoder.py
 
-Real-time AIOps watchdog agent using a multi-metric + GPU KNN anomaly detector.
+Real-time AIOps watchdog agent using a multi-metric + GPU AUTOENCODER anomaly detector.
 
 - Loads:
-    knn_model.pkl
-    scaler.pkl
+    autoencoder_model.keras
+    autoencoder_scaler.pkl
 
 - Collects metrics every INTERVAL seconds:
     disk, cpu, mem,
     net_kbps, disk_w_kbps,
     gpu_util, gpu_mem_mib, gpu_temp_c
 
-- Exposes Prometheus metrics on WATCHDOG_PORT (default: 8011):
+- Exposes Prometheus metrics on WATCHDOG_PORT (default: 8013):
     aiops_disk_usage_percent
     aiops_cpu_usage_percent
     aiops_mem_usage_percent
@@ -30,7 +30,7 @@ Real-time AIOps watchdog agent using a multi-metric + GPU KNN anomaly detector.
 
 This is the live counterpart to:
     - aiops-watchdog-ml.py  (collector)
-    - train_knn_final.py    (trainer)
+    - train_autoencoder_final.py    (trainer)
 """
 
 import os
@@ -41,6 +41,8 @@ from datetime import datetime
 import psutil
 import joblib
 import pandas as pd
+import tensorflow as tf
+import numpy as np
 
 from prometheus_client import Gauge, start_http_server
 def get_disk_extras(mountpoint: str, elapsed: float, prev_disk_used: int | None):
@@ -102,10 +104,10 @@ DATA_FEATURES = [
     "gpu_temp_c",
 ]
 
-MODEL_FILE = "knn_model.pkl"
-SCALER_FILE = "scaler.pkl"
+MODEL_FILE = "autoencoder_model.keras"
+SCALER_FILE = "autoencoder_scaler.pkl"
 
-PORT = int(os.getenv("WATCHDOG_PORT", "8011"))
+PORT = int(os.getenv("WATCHDOG_PORT", "8013"))
 INTERVAL = float(os.getenv("WATCHDOG_INTERVAL", "5.0"))
 GPU_INDEX = int(os.getenv("WATCHDOG_GPU_INDEX", "0"))
 
@@ -187,11 +189,11 @@ aiops_gpu_temp_c = Gauge(
 
 aiops_anomaly_label = Gauge(
     "aiops_anomaly_label",
-    "Anomaly label from KNN (0=normal, 1=anomaly)",
+    "Anomaly label from AUTOENCODER (0=normal, 1=anomaly)",
 )
 aiops_anomaly_score = Gauge(
     "aiops_anomaly_score",
-    "Anomaly score from KNN decision_function (higher=more normal, lower=more anomalous)",
+    "Anomaly score from AUTOENCODER decision_function (higher=more normal, lower=more anomalous)",
 )
 
 # Legacy metric for compatibility with existing dashboards/alerts
@@ -203,27 +205,33 @@ disk_anomaly_prediction = Gauge(
 
 def load_model_and_scaler():
     if not os.path.exists(MODEL_FILE):
-        print(f"[ERROR] Missing {MODEL_FILE}. Train model first with train_knn_final.py", flush=True)
+        print(f"[ERROR] Missing {MODEL_FILE}. Train model first with train_autoencoder_final.py", flush=True)
         sys.exit(1)
     if not os.path.exists(SCALER_FILE):
-        print(f"[ERROR] Missing {SCALER_FILE}. Train model first with train_knn_final.py", flush=True)
+        print(f"[ERROR] Missing {SCALER_FILE}. Train model first with train_autoencoder_final.py", flush=True)
+        sys.exit(1)
+    if not os.path.exists("autoencoder_threshold.txt"):
+        print("[ERROR] Missing autoencoder_threshold.txt. Train model first with train_autoencoder_final.py", flush=True)
         sys.exit(1)
 
     print(f"[INFO] Loading model from {MODEL_FILE}", flush=True)
-    model = joblib.load(MODEL_FILE)
+    model = tf.keras.models.load_model(MODEL_FILE)
 
     print(f"[INFO] Loading scaler from {SCALER_FILE}", flush=True)
     scaler = joblib.load(SCALER_FILE)
 
-    return model, scaler
+    print("[INFO] Loading threshold from autoencoder_threshold.txt", flush=True)
+    with open("autoencoder_threshold.txt", "r") as f:
+        threshold = float(f.read().strip())
 
+    return model, scaler, threshold
 
 def main():
     print(f"[INFO] Starting AIOps Watchdog on port {PORT}", flush=True)
     print(f"[INFO] Interval: {INTERVAL} seconds", flush=True)
     print(f"[INFO] Feature order: {DATA_FEATURES}", flush=True)
 
-    model, scaler = load_model_and_scaler()
+    model, scaler, threshold = load_model_and_scaler()
     gpu_handle = init_gpu(GPU_INDEX)
 
     columns = DATA_FEATURES
@@ -295,11 +303,9 @@ def main():
             X = pd.DataFrame([features], columns=columns)
             X_scaled = scaler.transform(X)
 
-            # PyOD KNN: predict() -> label, decision_function() -> scores
-            labels = model.predict(X_scaled)          # 0 = normal, 1 = anomaly
-            scores = model.decision_function(X_scaled)
-
-            label = int(labels[0])
+            recon = model.predict(X_scaled, verbose=0)
+            scores = np.mean(np.square(X_scaled - recon), axis=1)
+            label = int(scores[0] > threshold)
             score = float(scores[0])
 
             aiops_anomaly_label.set(label)

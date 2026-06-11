@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-aiops-watchdog-knn.py
+aiops-watchdog-iforest.py
 
-Real-time AIOps watchdog agent using a multi-metric + GPU KNN anomaly detector.
+Real-time AIOps watchdog agent using a multi-metric + GPU IFOREST anomaly detector.
 
 - Loads:
-    knn_model.pkl
-    scaler.pkl
+    iforest_model.pkl
+    iforest_scaler.pkl
 
 - Collects metrics every INTERVAL seconds:
     disk, cpu, mem,
     net_kbps, disk_w_kbps,
     gpu_util, gpu_mem_mib, gpu_temp_c
 
-- Exposes Prometheus metrics on WATCHDOG_PORT (default: 8011):
+- Exposes Prometheus metrics on WATCHDOG_PORT (default: 8012):
     aiops_disk_usage_percent
     aiops_cpu_usage_percent
     aiops_mem_usage_percent
@@ -30,7 +30,7 @@ Real-time AIOps watchdog agent using a multi-metric + GPU KNN anomaly detector.
 
 This is the live counterpart to:
     - aiops-watchdog-ml.py  (collector)
-    - train_knn_final.py    (trainer)
+    - train_iforest_final.py    (trainer)
 """
 
 import os
@@ -102,10 +102,10 @@ DATA_FEATURES = [
     "gpu_temp_c",
 ]
 
-MODEL_FILE = "knn_model.pkl"
-SCALER_FILE = "scaler.pkl"
+MODEL_FILE = "iforest_model.pkl"
+SCALER_FILE = "iforest_scaler.pkl"
 
-PORT = int(os.getenv("WATCHDOG_PORT", "8011"))
+PORT = int(os.getenv("WATCHDOG_PORT", "8012"))
 INTERVAL = float(os.getenv("WATCHDOG_INTERVAL", "5.0"))
 GPU_INDEX = int(os.getenv("WATCHDOG_GPU_INDEX", "0"))
 
@@ -187,11 +187,11 @@ aiops_gpu_temp_c = Gauge(
 
 aiops_anomaly_label = Gauge(
     "aiops_anomaly_label",
-    "Anomaly label from KNN (0=normal, 1=anomaly)",
+    "Anomaly label from IFOREST (0=normal, 1=anomaly)",
 )
 aiops_anomaly_score = Gauge(
     "aiops_anomaly_score",
-    "Anomaly score from KNN decision_function (higher=more normal, lower=more anomalous)",
+    "Anomaly score from IFOREST decision_function (higher=more normal, lower=more anomalous)",
 )
 
 # Legacy metric for compatibility with existing dashboards/alerts
@@ -203,10 +203,10 @@ disk_anomaly_prediction = Gauge(
 
 def load_model_and_scaler():
     if not os.path.exists(MODEL_FILE):
-        print(f"[ERROR] Missing {MODEL_FILE}. Train model first with train_knn_final.py", flush=True)
+        print(f"[ERROR] Missing {MODEL_FILE}. Train model first with train_iforest_final.py", flush=True)
         sys.exit(1)
     if not os.path.exists(SCALER_FILE):
-        print(f"[ERROR] Missing {SCALER_FILE}. Train model first with train_knn_final.py", flush=True)
+        print(f"[ERROR] Missing {SCALER_FILE}. Train model first with train_iforest_final.py", flush=True)
         sys.exit(1)
 
     print(f"[INFO] Loading model from {MODEL_FILE}", flush=True)
@@ -295,7 +295,7 @@ def main():
             X = pd.DataFrame([features], columns=columns)
             X_scaled = scaler.transform(X)
 
-            # PyOD KNN: predict() -> label, decision_function() -> scores
+            # PyOD IFOREST: predict() -> label, decision_function() -> scores
             labels = model.predict(X_scaled)          # 0 = normal, 1 = anomaly
             scores = model.decision_function(X_scaled)
 
