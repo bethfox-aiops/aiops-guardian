@@ -38,9 +38,9 @@ import time
 import sys
 from datetime import datetime
 
+import numpy as np
 import psutil
 import joblib
-import pandas as pd
 
 from prometheus_client import Gauge, start_http_server
 def get_disk_extras(mountpoint: str, elapsed: float, prev_disk_used: int | None):
@@ -292,7 +292,7 @@ def main():
                 gpu_temp_c,
             ]
 
-            X = pd.DataFrame([features], columns=columns)
+            X = np.array([features])
             X_scaled = scaler.transform(X)
 
             # PyOD KNN: predict() -> label, decision_function() -> scores
