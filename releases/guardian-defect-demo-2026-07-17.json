@@ -1,0 +1,44 @@
+{
+  "release_id": "guardian-defect-demo-2026-07-17",
+  "timestamp": "2026-07-17T16:04:28.972730Z",
+  "objective": "DEMO (deliberate, reverted): simulate a bad release by dropping KNN's retrain window from 2000 to 20 rows, to prove Guardian's Phase 5 verification catches and attributes a real regression.",
+  "agent": "Claude Code (claude-sonnet-5)",
+  "approval": "Interactively reviewed and approved by beth in this Claude Code session.",
+  "build_provenance": {
+    "commit": "548fdd61dddd72d9e13eca5158e9324dd0536ed2",
+    "commit_subject": "Add Behavioral Attestation engine (Phases 1-5): process/eBPF/GPU attribution, OpenTelemetry tracing, policy verification",
+    "commit_author": "Beth Fox <elizabeth_j_fox16@yahoo.com>",
+    "commit_date": "2026-07-17T08:59:58-07:00",
+    "branch": "main",
+    "files_changed": [
+      ".gitignore                         |   5 +",
+      " ROADMAP.md                         | 168 +++++++++++++++++",
+      " VISION.md                          | 200 ++++++++++++++++++++",
+      " aiops-watchdog-autoencoder.py      |  83 +++++++++",
+      " aiops-watchdog-iforest.py          |  83 +++++++++",
+      " aiops-watchdog-knn.py              |  83 +++++++++",
+      " behavioral_policy.py               |  76 ++++++++",
+      " ebpf_trace.py                      |  67 +++++++",
+      " gpu_attribution.py                 |  86 +++++++++",
+      " grafana_autoencoder_dashboard.json | 362 +++++++++++++++++++++++++++++++++++++",
+      " otel_setup.py                      |  34 ++++",
+      " process_attribution.py             |  59 ++++++",
+      " retrain_recent.py                  | 180 ++++++++++++++++++",
+      " retrain_recent_iforest.py          | 145 +++++++++++++++",
+      " retrain_recent_knn.py              | 145 +++++++++++++++",
+      " trace_suspect.sh                   |  36 ++++",
+      " 16 files changed, 1812 insertions(+)"
+    ]
+  },
+  "deployment": {
+    "workflow": "retrain_knn",
+    "trace_id": "7c696ee682965c0c86c1a153a9644ade",
+    "trace_url": "http://localhost:3200/api/traces/7c696ee682965c0c86c1a153a9644ade"
+  },
+  "runtime_behavioral_attestation": {
+    "passed": false,
+    "violations": [
+      "row_count 20 below policy minimum 100"
+    ]
+  }
+}

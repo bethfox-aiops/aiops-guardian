@@ -1,0 +1,42 @@
+{
+  "release_id": "guardian-behavioral-attestation-2026-07-17",
+  "timestamp": "2026-07-17T16:02:12.560678Z",
+  "objective": "Ship the Behavioral Attestation engine (Phases 1-5): process/eBPF/GPU attribution, OpenTelemetry tracing, and policy-based runtime verification, per VISION.md/ROADMAP.md.",
+  "agent": "Claude Code (claude-sonnet-5)",
+  "approval": "Interactively reviewed and approved by beth in this Claude Code session.",
+  "build_provenance": {
+    "commit": "548fdd61dddd72d9e13eca5158e9324dd0536ed2",
+    "commit_subject": "Add Behavioral Attestation engine (Phases 1-5): process/eBPF/GPU attribution, OpenTelemetry tracing, policy verification",
+    "commit_author": "Beth Fox <elizabeth_j_fox16@yahoo.com>",
+    "commit_date": "2026-07-17T08:59:58-07:00",
+    "branch": "main",
+    "files_changed": [
+      ".gitignore                         |   5 +",
+      " ROADMAP.md                         | 168 +++++++++++++++++",
+      " VISION.md                          | 200 ++++++++++++++++++++",
+      " aiops-watchdog-autoencoder.py      |  83 +++++++++",
+      " aiops-watchdog-iforest.py          |  83 +++++++++",
+      " aiops-watchdog-knn.py              |  83 +++++++++",
+      " behavioral_policy.py               |  76 ++++++++",
+      " ebpf_trace.py                      |  67 +++++++",
+      " gpu_attribution.py                 |  86 +++++++++",
+      " grafana_autoencoder_dashboard.json | 362 +++++++++++++++++++++++++++++++++++++",
+      " otel_setup.py                      |  34 ++++",
+      " process_attribution.py             |  59 ++++++",
+      " retrain_recent.py                  | 180 ++++++++++++++++++",
+      " retrain_recent_iforest.py          | 145 +++++++++++++++",
+      " retrain_recent_knn.py              | 145 +++++++++++++++",
+      " trace_suspect.sh                   |  36 ++++",
+      " 16 files changed, 1812 insertions(+)"
+    ]
+  },
+  "deployment": {
+    "workflow": "retrain_knn",
+    "trace_id": "5efc5855a50435750c3b91b3ea4a0afc",
+    "trace_url": "http://localhost:3200/api/traces/5efc5855a50435750c3b91b3ea4a0afc"
+  },
+  "runtime_behavioral_attestation": {
+    "passed": true,
+    "violations": []
+  }
+}
