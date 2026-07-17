@@ -1,0 +1,362 @@
+{
+  "dashboard": {
+    "uid": "4b70bb0f-5cca-4f0c-9a01-43b1001d0042",
+    "title": "AIOps Autoencoder Anomaly Detection",
+    "tags": ["aiops", "autoencoder", "anomaly"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "schemaVersion": 38,
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Anomaly Status",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "orientation": "auto",
+          "textMode": "auto",
+          "colorMode": "background",
+          "graphMode": "none"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "options": { "0": { "text": "NORMAL", "color": "green" }, "1": { "text": "ANOMALY", "color": "red" } } }
+            ],
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_label{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 2,
+        "title": "Reconstruction Error (Score)",
+        "type": "stat",
+        "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "orientation": "auto",
+          "textMode": "auto",
+          "colorMode": "background",
+          "graphMode": "none"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 4,
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1317 }] },
+            "color": { "mode": "thresholds" },
+            "unit": "short"
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_score{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 3,
+        "title": "Anomaly Score Over Time (threshold = 0.1317)",
+        "type": "timeseries",
+        "gridPos": { "x": 8, "y": 0, "w": 16, "h": 8 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "tooltip": { "mode": "single" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": { "lineWidth": 2, "fillOpacity": 10 },
+            "unit": "short",
+            "decimals": 4,
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1317 }] }
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byRegexp", "options": "score$" },
+              "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+            },
+            {
+              "matcher": { "id": "byName", "options": "Threshold" },
+              "properties": [
+                { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+                { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+                { "id": "custom.lineWidth", "value": 1 }
+              ]
+            }
+          ]
+        },
+        "targets": [
+          { "expr": "aiops_anomaly_score{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} score", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "vector(0.1317)", "legendFormat": "Threshold", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Disk Usage %",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 4, "w": 2, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_disk_usage_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 5,
+        "title": "Disk Free",
+        "type": "stat",
+        "gridPos": { "x": 2, "y": 4, "w": 2, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "decgbytes",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 50 }, { "color": "green", "value": 100 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_disk_free_gb{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 6,
+        "title": "CPU / Memory / Disk Over Time",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": { "unit": "percent", "custom": { "lineWidth": 2, "fillOpacity": 5 }, "min": 0, "max": 100 }
+        },
+        "targets": [
+          { "expr": "aiops_cpu_usage_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} CPU %", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_mem_usage_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} Memory %", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_disk_usage_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} Disk %", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Network & Disk I/O",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": { "unit": "KBs", "custom": { "lineWidth": 2, "fillOpacity": 5 } }
+        },
+        "targets": [
+          { "expr": "aiops_net_kbps{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} Net kB/s", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_disk_write_kbps{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} Disk Write kB/s", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_disk_fill_rate_mb_min{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} Disk Fill MB/min", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Anomaly Label Over Time",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "tooltip": { "mode": "single" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": { "lineWidth": 2, "fillOpacity": 30, "drawStyle": "bars", "barAlignment": 0 },
+            "min": 0,
+            "max": 1,
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+            "color": { "mode": "thresholds" },
+            "mappings": [{ "type": "value", "options": { "0": { "text": "Normal" }, "1": { "text": "Anomaly" } } }]
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_label{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 9,
+        "title": "GPU Metrics",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "fieldConfig": {
+          "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 5 } },
+          "overrides": [
+            { "matcher": { "id": "byRegexp", "options": "GPU Util %$" }, "properties": [{ "id": "unit", "value": "percent" }] },
+            { "matcher": { "id": "byRegexp", "options": "GPU Mem MiB$" }, "properties": [{ "id": "unit", "value": "mebibytes" }] },
+            { "matcher": { "id": "byRegexp", "options": "GPU Temp C$" }, "properties": [{ "id": "unit", "value": "celsius" }] }
+          ]
+        },
+        "targets": [
+          { "expr": "aiops_gpu_util_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} GPU Util %", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_gpu_mem_mib{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} GPU Mem MiB", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } },
+          { "expr": "aiops_gpu_temp_c{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}} GPU Temp C", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Inode Usage %",
+        "type": "gauge",
+        "gridPos": { "x": 0, "y": 22, "w": 4, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0, "max": 100,
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_inode_usage_percent{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 11,
+        "title": "Disk Fill Rate (MB/min)",
+        "type": "gauge",
+        "gridPos": { "x": 4, "y": 22, "w": 4, "h": 4 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MBs",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_disk_fill_rate_mb_min{job=~\"aiops-watchdog-knn|aiops-watchdog-iforest|aiops-watchdog-autoencoder\"}", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 12,
+        "title": "Anomaly Suspect Process (Behavioral Attestation Phase 1)",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 26, "w": 12, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "description": "Top suspect process attributed to the last flagged anomaly, per watchdog (job). Populated only after a watchdog has flagged label=1 at least once.",
+        "options": {
+          "showHeader": true
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "__name__" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "instance" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "job" }, "properties": [{ "id": "displayName", "value": "Watchdog" }] },
+            { "matcher": { "id": "byName", "options": "pid" }, "properties": [{ "id": "displayName", "value": "PID" }] },
+            { "matcher": { "id": "byName", "options": "name" }, "properties": [{ "id": "displayName", "value": "Process" }] }
+          ]
+        },
+        "targets": [
+          {
+            "expr": "aiops_anomaly_top_process_info",
+            "format": "table",
+            "instant": true,
+            "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" }
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Suspect Process CPU %",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 26, "w": 6, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 80 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_top_process_cpu_percent", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 14,
+        "title": "Suspect Process Mem %",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 26, "w": 6, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 80 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_top_process_mem_percent", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 15,
+        "title": "Suspect Process Syscall Evidence (Behavioral Attestation Phase 2)",
+        "type": "table",
+        "gridPos": { "x": 0, "y": 32, "w": 24, "h": 8 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "description": "Scoped eBPF trace results (3s window, rate-limited to one trace per suspect PID per 60s) for the last flagged suspect process, per watchdog. pid/name identify which process the counts belong to, which may lag the current top-process suspect if that pid is still within the trace cooldown window.",
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Count", "desc": true }]
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "__name__" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "instance" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "job" }, "properties": [{ "id": "displayName", "value": "Watchdog" }] },
+            { "matcher": { "id": "byName", "options": "pid" }, "properties": [{ "id": "displayName", "value": "PID" }] },
+            { "matcher": { "id": "byName", "options": "name" }, "properties": [{ "id": "displayName", "value": "Process" }] },
+            { "matcher": { "id": "byName", "options": "syscall_type" }, "properties": [{ "id": "displayName", "value": "Syscall Type" }] },
+            { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Count" }] }
+          ]
+        },
+        "targets": [
+          {
+            "expr": "aiops_anomaly_suspect_syscall_count",
+            "format": "table",
+            "instant": true,
+            "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" }
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "title": "Suspect Process GPU Memory (Behavioral Attestation Phase 4)",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 40, "w": 8, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "description": "GPU memory (MiB) used by the top suspect process at the last flagged anomaly, per watchdog. Per-process GPU accounting via NVML, extending the system-wide GPU util/mem/temp panels above.",
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "mebibytes",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 4000 }] },
+            "color": { "mode": "thresholds" }
+          }
+        },
+        "targets": [{ "expr": "aiops_anomaly_top_process_gpu_mem_mib", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      }
+    ]
+  },
+  "overwrite": true,
+  "folderId": 0
+}

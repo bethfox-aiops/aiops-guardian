@@ -45,6 +45,12 @@ import tensorflow as tf
 import numpy as np
 
 from prometheus_client import Gauge, start_http_server
+
+from process_attribution import get_top_processes
+from ebpf_trace import trace_suspect_process
+from gpu_attribution import get_gpu_usage_for_pid
+
+
 def get_disk_extras(mountpoint: str, elapsed: float, prev_disk_used: int | None):
     """
     Returns: (disk_pct, disk_free_gb, disk_fill_rate_mb_min, inode_pct, new_prev_disk_used)
@@ -202,6 +208,43 @@ disk_anomaly_prediction = Gauge(
     "Legacy anomaly metric; mirrors aiops_anomaly_label for compatibility.",
 )
 
+# Behavioral Attestation Phase 1: process-level attribution.
+# Retains the last-flagged suspect process until the next anomaly, so
+# operators can see "who caused the last incident" rather than resetting
+# to empty every normal cycle.
+aiops_anomaly_top_process_cpu_percent = Gauge(
+    "aiops_anomaly_top_process_cpu_percent",
+    "CPU percent of the top suspect process at the last flagged anomaly",
+)
+aiops_anomaly_top_process_mem_percent = Gauge(
+    "aiops_anomaly_top_process_mem_percent",
+    "Memory percent of the top suspect process at the last flagged anomaly",
+)
+aiops_anomaly_top_process_info = Gauge(
+    "aiops_anomaly_top_process_info",
+    "Info metric (always 1): labels identify the top suspect process at the last flagged anomaly",
+    ["pid", "name"],
+)
+
+# Behavioral Attestation Phase 2: scoped eBPF trace of the suspect process.
+# Only populated when a fresh trace actually runs (rate-limited, see
+# ebpf_trace.py); retains the last trace's counts between runs.
+aiops_anomaly_suspect_syscall_count = Gauge(
+    "aiops_anomaly_suspect_syscall_count",
+    "Syscall counts observed during the scoped eBPF trace of the last flagged suspect process. "
+    "pid/name identify which process these counts belong to (may lag the current top-process "
+    "suspect if that pid is still within the trace cooldown window).",
+    ["syscall_type", "pid", "name"],
+)
+
+# Behavioral Attestation Phase 4: per-process GPU accounting for the
+# suspect process. Retains the last flagged suspect's GPU usage between
+# anomalies, same semantics as the other top_process_* gauges.
+aiops_anomaly_top_process_gpu_mem_mib = Gauge(
+    "aiops_anomaly_top_process_gpu_mem_mib",
+    "GPU memory (MiB) used by the top suspect process at the last flagged anomaly",
+)
+
 
 def load_model_and_scaler():
     if not os.path.exists(MODEL_FILE):
@@ -313,6 +356,46 @@ def main():
 
             # Legacy metric mirror
             disk_anomaly_prediction.set(label)
+
+            # Behavioral Attestation Phase 1: attribute anomalies to a process
+            if label == 1:
+                top_procs = get_top_processes(n=5, by="cpu")
+                if top_procs:
+                    suspect = top_procs[0]
+                    aiops_anomaly_top_process_info.clear()
+                    aiops_anomaly_top_process_info.labels(
+                        pid=str(suspect["pid"]), name=suspect["name"]
+                    ).set(1)
+                    aiops_anomaly_top_process_cpu_percent.set(suspect["cpu_percent"])
+                    aiops_anomaly_top_process_mem_percent.set(suspect["mem_percent"])
+                    print(
+                        f"    [ATTRIBUTION] top suspects: "
+                        + ", ".join(
+                            f"{p['name']}(pid={p['pid']}, cpu={p['cpu_percent']:.1f}%, mem={p['mem_percent']:.1f}%)"
+                            for p in top_procs
+                        ),
+                        flush=True,
+                    )
+
+                    # Behavioral Attestation Phase 2: scoped eBPF trace
+                    evidence = trace_suspect_process(suspect["pid"])
+                    if evidence:
+                        aiops_anomaly_suspect_syscall_count.clear()
+                        for syscall_type, count in evidence["counts"].items():
+                            aiops_anomaly_suspect_syscall_count.labels(
+                                syscall_type=syscall_type, pid=str(suspect["pid"]), name=suspect["name"]
+                            ).set(count)
+                        print(
+                            f"    [EBPF] pid={suspect['pid']} syscalls in 3s: {evidence['counts']}"
+                            + (f" | files opened: {evidence['files_opened']}" if evidence["files_opened"] else ""),
+                            flush=True,
+                        )
+
+                    # Behavioral Attestation Phase 4: per-process GPU accounting
+                    gpu_mem = get_gpu_usage_for_pid(suspect["pid"], gpu_handle)
+                    aiops_anomaly_top_process_gpu_mem_mib.set(gpu_mem)
+                    if gpu_mem > 0:
+                        print(f"    [GPU] pid={suspect['pid']} using {gpu_mem:.1f} MiB GPU memory", flush=True)
 
             ts = datetime.utcnow().isoformat()
             print(
