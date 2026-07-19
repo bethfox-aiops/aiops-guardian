@@ -574,6 +574,52 @@ def get_watchdog_port_connections() -> int:
 # AI Risk Detection
 # ════════════════════════════════════════════════════════════════════════════
 
+_ufw_status_cache = {"ts": 0.0, "out": ""}
+
+def _get_ufw_status_cached(max_age: float = 25.0) -> str:
+    """`sudo ufw status` output, cached briefly so the once-per-cycle callers
+    (get_ufw_enabled, _ufw_denies_port_externally x4 ports) share one sudo call."""
+    now = time.time()
+    if now - _ufw_status_cache["ts"] > max_age:
+        try:
+            r = subprocess.run(["sudo", "ufw", "status"],
+                               capture_output=True, text=True, check=False, timeout=5)
+            _ufw_status_cache["out"] = r.stdout
+        except Exception:
+            _ufw_status_cache["out"] = ""
+        _ufw_status_cache["ts"] = now
+    return _ufw_status_cache["out"]
+
+
+def _ufw_denies_port_externally(port: int) -> bool:
+    """Return True if ufw has an explicit DENY-from-Anywhere rule for port
+    with no competing ALLOW-from-Anywhere rule (i.e. ufw itself blocks it,
+    regardless of what the socket is bound to)."""
+    out = _get_ufw_status_cached()
+    if "Status: active" not in out:
+        return False
+    deny_anywhere = False
+    allow_anywhere = False
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0].split("/")[0] != str(port):
+            continue
+        # "(v6)" after the port shifts every later column by one, e.g.
+        # "8011 (v6)  DENY  Anywhere (v6)  # comment"
+        idx = 2 if parts[1] == "(v6)" else 1
+        if idx >= len(parts):
+            continue
+        action = parts[idx]
+        source = " ".join(parts[idx + 1:]).split("#")[0].replace("(v6)", "").strip()
+        if source.lower() != "anywhere":
+            continue
+        if action == "DENY":
+            deny_anywhere = True
+        elif action == "ALLOW":
+            allow_anywhere = True
+    return deny_anywhere and not allow_anywhere
+
+
 def check_watchdog_port_external_access() -> int:
     """Return 1 if any watchdog port is reachable via the machine's non-loopback IP."""
     watchdog_ports = [8011, 8012, 8013, 8014]
@@ -586,6 +632,8 @@ def check_watchdog_port_external_access() -> int:
     if local_ip.startswith("127."):
         return 0
     for port in watchdog_ports:
+        if _ufw_denies_port_externally(port):
+            continue
         try:
             with socket.create_connection((local_ip, port), timeout=1):
                 return 1
@@ -784,12 +832,7 @@ def get_pending_security_updates() -> int:
 
 
 def get_ufw_enabled() -> int:
-    try:
-        r = subprocess.run(["sudo", "ufw", "status"],
-                           capture_output=True, text=True, check=False)
-        return 1 if "Status: active" in r.stdout else 0
-    except Exception:
-        return 0
+    return 1 if "Status: active" in _get_ufw_status_cached() else 0
 
 
 def get_root_ssh_enabled() -> int:
