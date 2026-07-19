@@ -2,7 +2,6 @@
 
 import shutil
 import logging
-from datetime import datetime
 
 # === CONFIG ===
 THRESHOLD_ALERT = 70   # in percent

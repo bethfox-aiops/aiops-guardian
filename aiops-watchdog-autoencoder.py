@@ -369,7 +369,7 @@ def main():
                     aiops_anomaly_top_process_cpu_percent.set(suspect["cpu_percent"])
                     aiops_anomaly_top_process_mem_percent.set(suspect["mem_percent"])
                     print(
-                        f"    [ATTRIBUTION] top suspects: "
+                        "    [ATTRIBUTION] top suspects: "
                         + ", ".join(
                             f"{p['name']}(pid={p['pid']}, cpu={p['cpu_percent']:.1f}%, mem={p['mem_percent']:.1f}%)"
                             for p in top_procs
