@@ -269,8 +269,6 @@ def main():
     model, scaler = load_model_and_scaler()
     gpu_handle = init_gpu(GPU_INDEX)
 
-    columns = DATA_FEATURES
-
     # Start Prometheus HTTP server
     start_http_server(PORT)
     print(f"[INFO] Prometheus metrics available on :{PORT}", flush=True)

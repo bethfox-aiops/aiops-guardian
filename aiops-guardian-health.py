@@ -186,11 +186,16 @@ def compute_health():
     service_state = 1 if all(check_service_active(s) for s in services) else 0
 
     score = 100
-    if cpu_state   == 0: score -= 20
-    if mem_state   == 0: score -= 20
-    if disk_state  == 0: score -= 20
-    if inode_state == 0: score -= 20
-    if service_state == 0: score -= 20
+    if cpu_state == 0:
+        score -= 20
+    if mem_state == 0:
+        score -= 20
+    if disk_state == 0:
+        score -= 20
+    if inode_state == 0:
+        score -= 20
+    if service_state == 0:
+        score -= 20
 
     cpu_ok.set(cpu_state)
     mem_ok.set(mem_state)
@@ -219,8 +224,8 @@ def check_new_users() -> int:
     nologin = {"/sbin/nologin", "/bin/false", "/usr/sbin/nologin"}
     try:
         with open("/etc/passwd") as f:
-            count = sum(1 for l in f if not l.startswith("#") and l.strip()
-                        and l.split(":")[-1].strip() not in nologin)
+            count = sum(1 for line in f if not line.startswith("#") and line.strip()
+                        and line.split(":")[-1].strip() not in nologin)
     except Exception:
         count = 0
     if _prev["user_count"] is None:
@@ -233,7 +238,7 @@ def check_new_users() -> int:
 
 def get_sudo_commands_24h() -> int:
     out = _run(["journalctl", "_COMM=sudo", "--since", "24 hours ago", "--no-pager", "-q"])
-    return sum(1 for l in out.splitlines() if "COMMAND" in l)
+    return sum(1 for line in out.splitlines() if "COMMAND" in line)
 
 
 def get_unique_ssh_source_ips() -> int:
@@ -318,7 +323,7 @@ def get_suid_binary_count() -> int:
          "-perm", "/6000", "-type", "f"],
         timeout=30
     )
-    return len([l for l in out.splitlines() if l.strip()])
+    return len([line for line in out.splitlines() if line.strip()])
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -448,7 +453,7 @@ def get_world_writable_count() -> int:
          "-perm", "-002", "-type", "f"],
         timeout=30
     )
-    return len([l for l in out.splitlines() if l.strip()])
+    return len([line for line in out.splitlines() if line.strip()])
 
 
 def get_tmp_stats() -> tuple:
@@ -886,26 +891,43 @@ def compute_security(iteration: int):
     open_ports_count.set(open_ports)
 
     base_deduction = 0
-    if updates > 0:       base_deduction += min(updates * 2, 30)
-    if ufw == 0:          base_deduction += 30
-    if root_ssh == 1:     base_deduction += 30
-    if failed_logins > 20: base_deduction += 20
-    if open_ports > 50:   base_deduction += 20
-    elif open_ports > 25: base_deduction += 10
+    if updates > 0:
+        base_deduction += min(updates * 2, 30)
+    if ufw == 0:
+        base_deduction += 30
+    if root_ssh == 1:
+        base_deduction += 30
+    if failed_logins > 20:
+        base_deduction += 20
+    if open_ports > 50:
+        base_deduction += 20
+    elif open_ports > 25:
+        base_deduction += 10
 
     issue_count = sum([ufw == 0, updates > 0, root_ssh == 1])
-    if issue_count > 1:    security_issue_code.set(4)
-    elif ufw == 0:         security_issue_code.set(1)
-    elif updates > 0:      security_issue_code.set(2)
-    elif root_ssh == 1:    security_issue_code.set(3)
-    elif open_ports > 50:  security_issue_code.set(5)
-    else:                  security_issue_code.set(0)
+    if issue_count > 1:
+        security_issue_code.set(4)
+    elif ufw == 0:
+        security_issue_code.set(1)
+    elif updates > 0:
+        security_issue_code.set(2)
+    elif root_ssh == 1:
+        security_issue_code.set(3)
+    elif open_ports > 50:
+        security_issue_code.set(5)
+    else:
+        security_issue_code.set(0)
 
-    if ufw == 0:           security_recommendation.set(1)
-    elif updates > 0:      security_recommendation.set(2)
-    elif root_ssh == 1:    security_recommendation.set(3)
-    elif open_ports > 50:  security_recommendation.set(4)
-    else:                  security_recommendation.set(0)
+    if ufw == 0:
+        security_recommendation.set(1)
+    elif updates > 0:
+        security_recommendation.set(2)
+    elif root_ssh == 1:
+        security_recommendation.set(3)
+    elif open_ports > 50:
+        security_recommendation.set(4)
+    else:
+        security_recommendation.set(0)
 
     # ── Identity & Access ───────────────────────────────────────────────────
     ssh_changed  = check_ssh_keys_changed()
@@ -1127,16 +1149,36 @@ def calculate_ai_risk_score(tools, processes, api_keys,
                              model_age_drift=0, gpu_spike=0):
     score = 100
     reasons = []
-    if tools            > 0: score -= 10; reasons.append("AI tools installed")
-    if processes        > 0: score -= 10; reasons.append("AI processes running")
-    if api_keys         > 0: score -= 20; reasons.append("AI API keys in environment")
-    if exposed_keys     > 0: score -= 25; reasons.append(f"{exposed_keys} API key(s) exposed in files/env")
-    if llm_conns        > 0: score -= 20; reasons.append(f"{llm_conns} outbound LLM API connection(s)")
-    if watchdog_external:    score -= 15; reasons.append("Watchdog ports externally reachable")
-    if shadow_models    > 0: score -= 20; reasons.append(f"{shadow_models} shadow model file(s) found")
-    if training_changed:     score -= 25; reasons.append("Training data head modified")
-    if model_age_drift:      score -= 20; reasons.append("Model file timestamp drifted without content change")
-    if gpu_spike:            score -= 20; reasons.append("GPU spike with no known workload")
+    if tools > 0:
+        score -= 10
+        reasons.append("AI tools installed")
+    if processes > 0:
+        score -= 10
+        reasons.append("AI processes running")
+    if api_keys > 0:
+        score -= 20
+        reasons.append("AI API keys in environment")
+    if exposed_keys > 0:
+        score -= 25
+        reasons.append(f"{exposed_keys} API key(s) exposed in files/env")
+    if llm_conns > 0:
+        score -= 20
+        reasons.append(f"{llm_conns} outbound LLM API connection(s)")
+    if watchdog_external:
+        score -= 15
+        reasons.append("Watchdog ports externally reachable")
+    if shadow_models > 0:
+        score -= 20
+        reasons.append(f"{shadow_models} shadow model file(s) found")
+    if training_changed:
+        score -= 25
+        reasons.append("Training data head modified")
+    if model_age_drift:
+        score -= 20
+        reasons.append("Model file timestamp drifted without content change")
+    if gpu_spike:
+        score -= 20
+        reasons.append("GPU spike with no known workload")
     return max(score, 0), reasons
 
 
@@ -1190,13 +1232,20 @@ def main():
         AI_MODEL_AGE_DRIFT.set(model_drift)
         AI_GPU_SPIKE.set(gpu_spike)
 
-        if watchdog_ext:   print("[AI-ALERT] Watchdog ports reachable from non-loopback IP!")
-        if exposed_keys:   print(f"[AI-ALERT] {exposed_keys} API key(s) exposed in files or env!")
-        if llm_conns:      print(f"[AI-ALERT] {llm_conns} outbound LLM API connection(s) detected!")
-        if shadow:         print(f"[AI-ALERT] {shadow} shadow model file(s) outside known directory!")
-        if training_changed: print("[AI-ALERT] Training data head modified — possible poisoning!")
-        if model_drift:    print("[AI-ALERT] Model file timestamp changed without content change!")
-        if gpu_spike:      print("[AI-ALERT] GPU spike with no recognized training workload!")
+        if watchdog_ext:
+            print("[AI-ALERT] Watchdog ports reachable from non-loopback IP!")
+        if exposed_keys:
+            print(f"[AI-ALERT] {exposed_keys} API key(s) exposed in files or env!")
+        if llm_conns:
+            print(f"[AI-ALERT] {llm_conns} outbound LLM API connection(s) detected!")
+        if shadow:
+            print(f"[AI-ALERT] {shadow} shadow model file(s) outside known directory!")
+        if training_changed:
+            print("[AI-ALERT] Training data head modified — possible poisoning!")
+        if model_drift:
+            print("[AI-ALERT] Model file timestamp changed without content change!")
+        if gpu_spike:
+            print("[AI-ALERT] GPU spike with no recognized training workload!")
 
         risk, reasons = calculate_ai_risk_score(
             count, proc_count, key_count,
