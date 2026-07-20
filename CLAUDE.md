@@ -114,5 +114,14 @@ before assuming the row count is sane.
 
 - `full_system_report_*.md` / `system_report_*.md` are point-in-time snapshot
   reports and are gitignored — don't expect them to be tracked or complete.
-- `disk_watchdog.py`/`.service` is legacy and currently inactive; superseded
-  by the health/security checks in `aiops-guardian-health.py`.
+- `disk_watchdog.py` runs via `disk_watchdog.timer` (every 15 min, oneshot),
+  not continuously — `systemctl status` showing `inactive (dead)` between runs
+  is normal, not a sign it's abandoned.
+- `/etc/prometheus/rules/aiops-alerts.yml` defines sustained-anomaly alerts
+  for all three watchdogs and is loaded/evaluating in Prometheus, but
+  Alertmanager isn't running — firing alerts don't reach a human yet. Check
+  `curl localhost:9090/api/v1/rules` for current alert state before assuming
+  nothing is instrumented here.
+- `releases/*.json` (written by `release_record.py`, Phase 6) already has a
+  real example of the "AI-managed release traceability" demo from
+  `VISION.md` succeeding — see `guardian-defect-demo-2026-07-17.json`.

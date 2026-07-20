@@ -246,9 +246,17 @@ grouped so they're actionable later:
 - A 156-day-old k8s deployment wasn't identifiable as "known/intentional" vs.
   "stray leftover" without active investigation, even with full session
   context — an on-call engineer with less context would have no chance.
-- No runbooks, no alerting/paging integration beyond Grafana dashboards
-  existing, no documented rollback procedure. `Restart=always` is a crash
+- No runbooks, no documented rollback procedure. `Restart=always` is a crash
   loop with a delay, not an operations strategy.
+- **Correction (2026-07-20):** alerting itself does exist —
+  `/etc/prometheus/rules/aiops-alerts.yml` defines sustained-anomaly alerts
+  for all three watchdogs and they do fire (confirmed `KNNWatchdogSustainedAnomaly`
+  actively firing on 2026-07-20, matching the recurring pattern from the
+  2026-07-13 report). The real gap is narrower than "no alerting": Alertmanager
+  isn't running, so a firing alert never reaches a human — it just sits in
+  Prometheus's own UI. Wiring up Alertmanager (even just email/Slack) is a
+  small, high-leverage fix relative to how much of the alerting groundwork
+  already exists.
 - Metric *interpretation* (what `ai_risk_score=80` actually means, whether
   it's an emergency) has so far happened in AI chat sessions, not in the
   system itself — see the report-generator idea earlier in this doc as the
@@ -263,7 +271,12 @@ grouped so they're actionable later:
 even if bind address undermines it); the Behavioral Attestation problem
 statement itself is a real, current enterprise gap; `.gitignore` correctly
 excludes secrets/models/data with no credentials found in git history
-(verified via full history search, not assumed); `VISION.md`'s own
+(verified via full history search, not assumed); **the Phase 6 "AI-managed
+release traceability" demo target from `VISION.md` already succeeded once**
+(`releases/guardian-defect-demo-2026-07-17.json`: a deliberately injected
+defect — KNN retrain window dropped 2000→20 — was correctly caught by Phase
+5 policy verification, `"passed": false`) — this note's earlier framing of
+that as future work was stale by three days; `VISION.md`'s own
 "deliberately narrow scope" section already names the over-engineering trap
 most solo projects fall into.
 
