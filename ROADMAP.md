@@ -212,3 +212,61 @@ the current deployment does and doesn't demonstrate:
    confirm even distribution; kill a node and confirm pods reschedule
    automatically (cheap, fast, great demo); add a `NetworkPolicy` and confirm
    namespace isolation actually holds.
+
+---
+
+## Note: operational-readiness assessment (skeptical IT Ops manager lens, 2026-07-20)
+
+Bottom line: this would not pass a production readiness review today. The
+*design* (Behavioral Attestation's "can I prove what actually happened"
+question) is more mature than most production systems get reviewed for — the
+gap is that operational hygiene hasn't caught up to the ambition yet. Gaps,
+grouped so they're actionable later:
+
+**Reliability**
+- No automated test suite at all. 60 `ruff` errors sat in the codebase
+  undetected until an explicit lint pass (2026-07-19), including a real logic
+  bug (`_ufw_denies_port_externally` missing IPv6-only DENY rules).
+- `retrain_recent.py` / `retrain_recent_iforest.py` still have
+  `RECENT_ROWS=100000` vs. `retrain_recent_knn.py`'s `2000` — an unnoticed
+  cross-script inconsistency, i.e. nothing currently checks sibling scripts
+  stay consistent.
+- No staging environment — this box is prod, dev, and workstation at once;
+  every change is tested live.
+
+**Security**
+- Watchdog ports bind to `0.0.0.0` (not `127.0.0.1` as code comments claim);
+  `ufw`'s DENY rule is the *only* thing preventing external exposure — single
+  point of failure, not defense-in-depth.
+- Passwordless sudo for `trace_suspect.sh` accepts an unrestricted wildcard
+  argument — a real privilege-escalation surface worth a second look.
+- No secrets manager; config lives in plaintext systemd env drop-ins.
+
+**Operational supportability**
+- A 156-day-old k8s deployment wasn't identifiable as "known/intentional" vs.
+  "stray leftover" without active investigation, even with full session
+  context — an on-call engineer with less context would have no chance.
+- No runbooks, no alerting/paging integration beyond Grafana dashboards
+  existing, no documented rollback procedure. `Restart=always` is a crash
+  loop with a delay, not an operations strategy.
+- Metric *interpretation* (what `ai_risk_score=80` actually means, whether
+  it's an emergency) has so far happened in AI chat sessions, not in the
+  system itself — see the report-generator idea earlier in this doc as the
+  planned fix.
+
+**Scalability claims vs. reality**
+- Covered above — k8s deployment is single-node, watchdogs are stateful, so
+  "runs on k8s" and "horizontally scalable" are not yet the same claim.
+
+**Credited as genuinely good:**
+`ufw` ALLOW-127.0.0.1 + DENY-Anywhere layering (security instinct is right,
+even if bind address undermines it); the Behavioral Attestation problem
+statement itself is a real, current enterprise gap; `.gitignore` correctly
+excludes secrets/models/data with no credentials found in git history
+(verified via full history search, not assumed); `VISION.md`'s own
+"deliberately narrow scope" section already names the over-engineering trap
+most solo projects fall into.
+
+**If gated for a real pilot:** minimum bar before touching real infrastructure
+would be a test suite, sockets bound correctly (not relying on firewall
+alone), and one documented "if this breaks, do X" runbook per service.
