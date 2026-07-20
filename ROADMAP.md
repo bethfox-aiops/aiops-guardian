@@ -191,3 +191,24 @@ the current deployment does and doesn't demonstrate:
   with the systemd-managed instance, independently, both pointed at the same
   local files — a reasonable "learned the orchestration primitives" milestone,
   not yet a scale test.
+
+**Path to an actual enterprise-scale test, in order:**
+
+1. **Make the watchdogs stateless first** (do this before touching multi-node —
+   otherwise multi-node just reproduces the same file-contention problem across
+   more machines). Move `metrics.csv` writes off local disk (a real DB, or push
+   straight to Prometheus remote-write). Move model artifacts (`.pkl`/`.keras`)
+   to shared storage (NFS/object storage/a small model registry) that replicas
+   *read*, not *own*. This alone is testable and demonstrable on the current
+   single node.
+2. **Get real node boundaries, cheaply.** microk8s supports joining multiple
+   nodes into one cluster (`microk8s add-node`) — a few low-cost cloud VMs
+   joined as real nodes is the most realistic option (actual network/resource
+   isolation). `kind` with multiple worker containers is a free way to test
+   scheduling logic first, but it simulates nodes on one kernel and isn't a
+   substitute for real ones.
+3. **Test things that actually demonstrate "enterprise-ready," not just "runs
+   on more boxes":** scale a stateless watchdog to N replicas under load and
+   confirm even distribution; kill a node and confirm pods reschedule
+   automatically (cheap, fast, great demo); add a `NetworkPolicy` and confirm
+   namespace isolation actually holds.
