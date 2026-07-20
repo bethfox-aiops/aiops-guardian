@@ -166,3 +166,28 @@ captured as structured evidence at the time.
   depend on each other, only on Phase 1's anomaly-timeline concept existing.
 - Phases 5–6 both depend on having real trace data (Phase 3) to verify/attach to,
   so they come last regardless of how the middle phases are resequenced.
+
+---
+
+## Note: Kubernetes / horizontal scaling (not a phase, tracked here for later)
+
+microk8s was installed to test whether these scripts could run efficiently at
+enterprise scale, not just on one machine — worth being clear-eyed about what
+the current deployment does and doesn't demonstrate:
+
+- It's single-node (the same box is both the k8s node and the host), so it
+  proves the scripts can be containerized/orchestrated. It does **not** exercise
+  what "enterprise scale" actually stresses: multi-node scheduling, network
+  policy across machines, resource contention under real distributed load. That
+  needs more than one node to observe at all.
+- Bigger blocker before multi-node is worth trying: the watchdogs assume
+  local-filesystem, singleton state — `metrics.csv`, the `.pkl`/`.keras` model
+  files, appending writes. Scaling `aiops-watchdog-knn` to multiple replicas
+  today would have them fighting over the same local files, not actually
+  scaling horizontally. Solving that (shared/networked storage, or making each
+  replica stateless with a centralized model) is the real prerequisite —
+  multi-node won't tell you anything new until it's addressed.
+- Current state: one k8s-deployed replica of the KNN watchdog runs in parallel
+  with the systemd-managed instance, independently, both pointed at the same
+  local files — a reasonable "learned the orchestration primitives" milestone,
+  not yet a scale test.
