@@ -257,6 +257,24 @@ grouped so they're actionable later:
   Prometheus's own UI. Wiring up Alertmanager (even just email/Slack) is a
   small, high-leverage fix relative to how much of the alerting groundwork
   already exists.
+- **Closed (2026-07-20):** Alertmanager is now installed (`/usr/local/bin/alertmanager`,
+  official tarball release v0.33.1, same install pattern as the existing
+  Prometheus binary), running as `alertmanager.service` (enabled on boot),
+  routing to a Slack Incoming Webhook. `prometheus.yml`'s `alerting.alertmanagers`
+  target now points at `localhost:9093`, and Prometheus confirms it's connected
+  (`/api/v1/alertmanagers` shows it active). Verified end-to-end: the real
+  `KNNWatchdogSustainedAnomaly` alert was observed landing in Slack with its
+  full annotation text, not just a synthetic test. One real bug hit and fixed
+  along the way — a stray trailing single-quote in the webhook URL in
+  `/etc/alertmanager/alertmanager.yml` (no matching opening quote, so YAML
+  read it as a literal trailing character) caused every notify attempt to
+  fail with Slack redirecting to its docs 404 page; manual `curl`/`urllib`
+  tests against the same URL kept succeeding because the diagnostic script's
+  `.strip("'")` silently removed the bad character before testing, which is
+  what made the bug hard to spot at first. Remaining gap: no alert
+  currently routes anywhere except Slack (no email/PagerDuty-style
+  escalation), and there's no alert-fatigue tuning (grouping/inhibition
+  rules are still just the initial pass in `alertmanager.yml`).
 - Metric *interpretation* (what `ai_risk_score=80` actually means, whether
   it's an emergency) has so far happened in AI chat sessions, not in the
   system itself — see the report-generator idea earlier in this doc as the
