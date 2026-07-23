@@ -81,6 +81,53 @@ To                         Action      From
         assert gh._ufw_denies_port_externally(8011) is False
 
 
+class TestUfwStatusCaching:
+    """Covers _get_ufw_status_cached() -- the fix from 2026-07-20 that made
+    several ufw-checking functions share one `sudo ufw status` call instead
+    of each shelling out separately. Uses a fake subprocess.run so no real
+    ufw/sudo access is needed, and just counts how many times it's called."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache_and_fake_subprocess(self, monkeypatch):
+        # Every test starts with a clean, expired cache so tests can't
+        # interfere with each other via the shared module-level dict.
+        monkeypatch.setitem(gh._ufw_status_cache, "ts", 0.0)
+        monkeypatch.setitem(gh._ufw_status_cache, "out", "")
+
+        self.call_count = 0
+
+        def fake_run(*args, **kwargs):
+            self.call_count += 1
+            return type("FakeResult", (), {"stdout": "Status: active\n"})()
+
+        monkeypatch.setattr(gh.subprocess, "run", fake_run)
+
+    def test_first_call_shells_out_once(self):
+        gh._get_ufw_status_cached()
+        assert self.call_count == 1
+
+    def test_second_call_within_window_reuses_cache(self):
+        gh._get_ufw_status_cached()
+        gh._get_ufw_status_cached()
+        gh._get_ufw_status_cached()
+        assert self.call_count == 1  # still just the one real call
+
+    def test_full_health_check_cycle_shells_out_once(self):
+        # get_ufw_enabled() + 4 port checks == 5 callers sharing one cache.
+        gh.get_ufw_enabled()
+        for port in [8011, 8012, 8013, 8014]:
+            gh._ufw_denies_port_externally(port)
+        assert self.call_count == 1
+
+    def test_cache_expires_after_max_age(self):
+        gh._get_ufw_status_cached()
+        assert self.call_count == 1
+
+        gh._ufw_status_cache["ts"] -= 30  # simulate 30s passing (max_age is 25s)
+        gh._get_ufw_status_cached()
+        assert self.call_count == 2
+
+
 class TestCalculateAiRiskScore:
     def test_no_risk_factors_returns_100(self):
         score, reasons = gh.calculate_ai_risk_score(
