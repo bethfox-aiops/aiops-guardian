@@ -158,6 +158,42 @@ captured as structured evidence at the time.
 
 ---
 
+## Phase 7 — Govern the agent, not just the output (proposed 2026-07-20)
+
+**Goal:** close the gap named in `VISION.md`'s "sharper framing" note — Phase 6
+proves what an AI-driven change *did*; this phase would prove the AI agent
+making changes was *governed while doing it*, which is the distinction a real
+audit actually cares about (see the framing that prompted this: an ungoverned
+agent holding privileged access isn't automation, it's "an incident with a
+countdown").
+
+Concrete, currently-missing pieces, in rough priority order:
+
+1. **A scoped identity for the agent, not the developer's own session.** Right
+   now Claude Code (or any AI agent) operates with the full, unscoped `beth`
+   user session — same sudo, same git push access, same filesystem reach as
+   the human. A real least-privilege model would give the agent its own
+   narrower identity (e.g. a separate, tightly-scoped sudoers profile or a
+   dedicated service account) with only the access a given task actually
+   needs, not blanket inheritance of the human's session.
+2. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001
+   and/or the NIST AI RMF are the two named in the framing that prompted this)
+   instead of the current ad-hoc dict. This is what turns "we check some
+   things" into something an auditor would recognize as governance.
+3. **Genuinely tamper-evident logging**, not just observable logging. Today's
+   evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
+   JSON files) is good observability but nothing is cryptographically signed
+   or append-only — a privileged actor (including an AI agent with broad
+   sudo) could alter it after the fact. Worth exploring something as simple
+   as hash-chaining `releases/*.json` records (each record includes the hash
+   of the previous one) before reaching for anything heavier.
+
+This phase is deliberately not scoped further than that yet — it's a real gap
+worth tracking, not a fully-designed plan. Revisit and flesh out phase-by-phase
+like the rest of this roadmap once there's appetite to build it.
+
+---
+
 ## Sequencing notes
 
 - Phases are ordered by dependency, not necessarily by priority — Phase 1 unlocks

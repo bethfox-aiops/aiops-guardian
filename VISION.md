@@ -27,6 +27,26 @@ one of these:
 If a proposed feature doesn't do any of those, it probably belongs in a different
 project, not bolted onto Guardian.
 
+**Sharper framing (added 2026-07-20):** an industry post crossed the user's feed
+making the same point from a real-world audit angle — the hard part isn't an AI
+agent doing the work, it's proving the agent was *governed* while it did it: least-
+privilege access, a documented reason to exist, tamper-evident logging. An auditor
+doesn't care that an agent wrote the evidence; they care whether the agent was
+controlled. That's a more precise restatement of Guardian's own north star than
+"can I explain and prove what this system did" alone — it's specifically "can I
+prove the *agents* were governed," not just that behavior was observed. Guardian's
+Phase 6 (`release_record.py`) is genuine, working progress toward this (see
+`releases/guardian-defect-demo-2026-07-17.json` for a real example: an AI-made
+change, evidence collected, a policy violation correctly caught). But be honest
+about the gap this framing exposes — Guardian does not yet *govern* the AI agents
+that act on it (this project has been built via Claude Code operating with the
+user's own full, unscoped session — no separate least-privilege identity, no
+mapping to a real framework like ISO 42001 or the NIST AI RMF, and nothing in the
+current logging is genuinely tamper-evident, i.e. cryptographically signed or
+append-only, as opposed to just "observable"). Closing that gap — not just adding
+more observation — is the next real maturity step; see the corresponding items in
+`ROADMAP.md`.
+
 ## What Guardian actually is
 
 Guardian is not an AI/ML project with some extra features. It's a **systems
