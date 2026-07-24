@@ -128,6 +128,78 @@ class TestUfwStatusCaching:
         assert self.call_count == 2
 
 
+class TestScoreSecurityBase:
+    """Covers _score_security_base(), pulled out of compute_security() on
+    2026-07-23 specifically to make it testable without mocking the ~25
+    other checks compute_security() also runs. A few of these tests exist
+    because the real behavior is more subtle than it looks at a glance --
+    see the comments on each."""
+
+    def test_all_clear_returns_zero(self):
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=1, root_ssh=0, failed_logins=0, open_ports=10)
+        assert (deduction, issue_code, recommendation) == (0, 0, 0)
+
+    def test_ufw_disabled_alone(self):
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=0, root_ssh=0, failed_logins=0, open_ports=10)
+        assert (deduction, issue_code, recommendation) == (30, 1, 1)
+
+    def test_updates_pending_alone(self):
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=5, ufw=1, root_ssh=0, failed_logins=0, open_ports=10)
+        assert (deduction, issue_code, recommendation) == (10, 2, 2)  # min(5*2, 30)
+
+    def test_updates_deduction_caps_at_30(self):
+        deduction, _, _ = gh._score_security_base(
+            updates=100, ufw=1, root_ssh=0, failed_logins=0, open_ports=10)
+        assert deduction == 30  # not 200
+
+    def test_root_ssh_alone(self):
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=1, root_ssh=1, failed_logins=0, open_ports=10)
+        assert (deduction, issue_code, recommendation) == (30, 3, 3)
+
+    def test_failed_logins_affects_deduction_but_not_issue_code(self):
+        # Subtle: failed_logins isn't part of issue_count at all, so it can
+        # add to the deduction while leaving issue_code/recommendation at 0.
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=1, root_ssh=0, failed_logins=25, open_ports=10)
+        assert deduction == 20
+        assert (issue_code, recommendation) == (0, 0)
+
+    def test_open_ports_between_25_and_50_affects_deduction_but_not_issue_code(self):
+        # Subtle: the issue_code/recommendation cascade only checks
+        # open_ports > 50, not > 25 -- so this range silently adds to the
+        # deduction without ever surfacing as an issue code.
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=1, root_ssh=0, failed_logins=0, open_ports=30)
+        assert deduction == 10
+        assert (issue_code, recommendation) == (0, 0)
+
+    def test_open_ports_above_50(self):
+        deduction, issue_code, recommendation = gh._score_security_base(
+            updates=0, ufw=1, root_ssh=0, failed_logins=0, open_ports=60)
+        assert (deduction, issue_code, recommendation) == (20, 5, 4)
+
+    def test_multiple_issues_sets_issue_code_4(self):
+        # ufw disabled AND updates pending -- issue_count=2, so issue_code
+        # becomes the generic "multiple issues" code (4), even though
+        # recommendation still follows the priority order below.
+        _, issue_code, recommendation = gh._score_security_base(
+            updates=5, ufw=0, root_ssh=0, failed_logins=0, open_ports=10)
+        assert issue_code == 4
+        assert recommendation == 1  # ufw still wins priority for the recommendation
+
+    def test_recommendation_priority_order(self):
+        # updates and root_ssh both wrong, no ufw issue -- recommendation
+        # should follow the priority order (updates checked before
+        # root_ssh), not just "whatever's wrong."
+        _, _, recommendation = gh._score_security_base(
+            updates=5, ufw=1, root_ssh=1, failed_logins=0, open_ports=10)
+        assert recommendation == 2  # updates, not root_ssh
+
+
 class TestCalculateAiRiskScore:
     def test_no_risk_factors_returns_100(self):
         score, reasons = gh.calculate_ai_risk_score(
