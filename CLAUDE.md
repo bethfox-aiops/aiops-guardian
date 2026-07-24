@@ -31,6 +31,7 @@ In production, everything runs as systemd services (`User=beth`,
 | `aiops-watchdog-iforest` | `aiops-watchdog-iforest.py` | 8012 |
 | `aiops-watchdog-autoencoder` | `aiops-watchdog-autoencoder.py` | 8013 |
 | `aiops-watchdog-ml` | `aiops-watchdog-ml.py` | — (collector, no HTTP) |
+| `aiops-watchdog-windows` | `aiops-watchdog-windows.py` | 8016 |
 
 Restarting any of these needs `sudo` and is **not** in this user's passwordless
 sudoers list (only `ufw`, `trace_suspect.sh`, and restarting
@@ -80,6 +81,21 @@ security (`aiops_security_*`, computed in `compute_security()`), and AI risk
 (`ai_*`, computed in `calculate_ai_risk_score()`). `sudo ufw status` output is
 cached for 25s (`_get_ufw_status_cached()`) since several checks per cycle used
 to shell out to it separately.
+
+**`aiops-watchdog-windows.py`** is architecturally different from the other
+watchdogs: Windows hosts aren't collected locally (there's no psutil-on-Windows
+agent), they're already instrumented by `windows_exporter` and scraped by
+Prometheus under `job="windows-node"` (see `prometheus.yml`; targets are
+`DESKTOP-*:9182` hostnames, not IPs). This script queries that existing
+Prometheus data via its HTTP API (`prom_query_vector()`), applies
+threshold-based health checks per discovered instance (cpu/mem/disk/service,
+mirroring `compute_health()`'s 100-minus-N-per-failed-check pattern), and
+re-exposes the result as `aiops_windows_health_*{instance}` gauges. The
+service check deliberately checks a small allowlist of always-on services
+(`CRITICAL_SERVICES`) rather than "any `start_mode=auto` service that isn't
+running" — many Windows services (Google Updater, AppXSvc, MapsBroker,
+`sppsvc`, ...) report `start_mode=auto` but use trigger-start semantics, so
+idle/stopped is their normal resting state, not a fault.
 
 **Security posture note:** the watchdog ports (8011–8014) are bound to
 `0.0.0.0` at the socket level, not `127.0.0.1` — ufw's explicit
