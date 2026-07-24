@@ -32,6 +32,7 @@ In production, everything runs as systemd services (`User=beth`,
 | `aiops-watchdog-autoencoder` | `aiops-watchdog-autoencoder.py` | 8013 |
 | `aiops-watchdog-ml` | `aiops-watchdog-ml.py` | — (collector, no HTTP) |
 | `aiops-watchdog-windows` | `aiops-watchdog-windows.py` | 8016 |
+| `aiops-watchdog-logs` | `aiops-watchdog-logs.py` | 8017 |
 
 Restarting any of these needs `sudo` and is **not** in this user's passwordless
 sudoers list (only `ufw`, `trace_suspect.sh`, and restarting
@@ -96,6 +97,36 @@ service check deliberately checks a small allowlist of always-on services
 running" — many Windows services (Google Updater, AppXSvc, MapsBroker,
 `sppsvc`, ...) report `start_mode=auto` but use trigger-start semantics, so
 idle/stopped is their normal resting state, not a fault.
+
+**`aiops-watchdog-logs.py`** is a log-anomaly watchdog over Loki, same
+external-data-source pattern as the Windows watchdog. It requires Promtail's
+`journal` scrape job (added 2026-07-24 alongside this watchdog — the older
+`varlogs` job only covers `/var/log/*log`, not systemd service output) so
+Guardian's own services are actually queryable in Loki with a `unit` label.
+Per Guardian systemd unit, it checks `error_count` (lines matching
+`[ERROR]` or a raw Python traceback in the last 5m — deliberately not a
+broader case-insensitive `error|warn` match, which during design matched
+the benign sklearn `UserWarning` on effectively every cycle) and `silent`
+(no log lines at all in 5m while systemd reports the unit active, catching
+a hung-but-technically-running process). A separate `aiops_logs_query_ok`
+gauge distinguishes "Loki itself failed to answer this cycle" from "the
+unit's logs are clean" — an earlier draft used `query_result or 0.0`,
+which silently reported 0 errors on a failed query, indistinguishable from
+a verified zero. LogQL detail: the error-match pattern is backtick-quoted
+(`` `\[ERROR\]|...` ``) because double-quoted LogQL strings go through
+Go-style string unescaping before regex compilation, where `\[` isn't a
+valid string escape.
+
+**Loki reliability note:** Loki's `common.instance_addr` was previously
+auto-detected from the LAN interface at startup, which went stale on every
+DHCP address change and broke internal ring/ingester/scheduler calls with
+"no route to host" until the next restart — live intermittently since
+2026-02-13 (602k+ error log lines, 328k+ dropped log entries via
+Promtail's `promtail_dropped_entries_total{reason="ingester_error"}`)
+before being caught and fixed on 2026-07-24 by pinning
+`instance_addr: 127.0.0.1` in `/etc/loki/config.yml` (outside this repo).
+Single-node Loki never needs to reach itself over the LAN, so loopback is
+the correct fix, not a workaround.
 
 **Security posture note:** the watchdog ports (8011–8014) are bound to
 `0.0.0.0` at the socket level, not `127.0.0.1` — ufw's explicit
