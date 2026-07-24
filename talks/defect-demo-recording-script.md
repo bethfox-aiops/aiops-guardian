@@ -72,7 +72,10 @@ grep -n "RECENT_ROWS" retrain_recent_knn.py
 > "Right now it's set to 2000 rows. I'm going to simulate a bad AI-driven
 > change — someone, or an agent, drops that number way too low."
 
-**Edit `retrain_recent_knn.py` line 41:**
+**Edit `retrain_recent_knn.py`** at the `RECENT_ROWS` line the grep above just
+showed (don't hardcode a line number here — it's shifted before, e.g. when
+the retrain scripts were refactored on 2026-07-24, and the grep already
+points at it live on screen):
 ```python
 RECENT_ROWS = 20   # was 2000
 ```
