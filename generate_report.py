@@ -240,7 +240,7 @@ def render_report(current, previous, firing_alerts, annotations, findings):
     lines.append(summary)
     lines.append("")
     lines.append("---")
-    lines.append(f"*Generated from live Prometheus metrics (localhost:9090) and Grafana annotations (localhost:3000).*")
+    lines.append("*Generated from live Prometheus metrics (localhost:9090) and Grafana annotations (localhost:3000).*")
 
     return "\n".join(lines)
 
