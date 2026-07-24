@@ -25,6 +25,7 @@ from otel_setup import get_tracer
 from ebpf_trace import trace_suspect_process
 from gpu_attribution import poll_max_gpu_usage
 from behavioral_policy import verify
+from grafana_annotate import post_annotation
 
 try:
     from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex
@@ -141,5 +142,9 @@ if __name__ == "__main__":
                 print("[VERIFY] FAIL: this run violated its behavioral policy:")
                 for v in result["violations"]:
                     print(f"  - {v}")
+                post_annotation(
+                    f"retrain_knn policy violation: {'; '.join(result['violations'])}",
+                    tags=["guardian", "policy-violation", "retrain_knn"],
+                )
 
         print("[INFO] Done. Restart aiops-watchdog-knn to load new model.")
