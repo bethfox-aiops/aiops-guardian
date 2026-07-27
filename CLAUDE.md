@@ -33,6 +33,7 @@ In production, everything runs as systemd services (`User=beth`,
 | `aiops-watchdog-ml` | `aiops-watchdog-ml.py` | — (collector, no HTTP) |
 | `aiops-watchdog-windows` | `aiops-watchdog-windows.py` | 8016 |
 | `aiops-watchdog-logs` | `aiops-watchdog-logs.py` | 8017 |
+| `aiops-watchdog-priority` | `aiops-watchdog-priority.py` | 8018 |
 
 Restarting any of these needs `sudo` and is **not** in this user's passwordless
 sudoers list (only `ufw`, `trace_suspect.sh`, and restarting
@@ -127,6 +128,50 @@ before being caught and fixed on 2026-07-24 by pinning
 `instance_addr: 127.0.0.1` in `/etc/loki/config.yml` (outside this repo).
 Single-node Loki never needs to reach itself over the LAN, so loopback is
 the correct fix, not a workaround.
+
+**`aiops-watchdog-priority.py`** cross-source warning triage: pulls
+together currently-firing Prometheus `ALERTS`, Guardian's own
+health/security/AI-risk/Windows/log gauges, and the older, looser
+`all_check.service` (`/opt/aiops/all_check.py`, outside this repo, port
+8000 under three job names — `all_check_agent`/`disk_anomaly`/
+`disk_anomaly_ml` all scraping the same target) into one
+`aiops_priority_score{check, detail, tier}` gauge. Priority = a per-tier
+base weight (ALERTS highest, already vetted by a 30-min sustain
+requirement; Guardian's own checks next; all_check.service lowest, since
+it's un-debounced and has at least one confirmed permanent false positive
+— `check_service_status("ssh")` fires every ~15s forever because sshd was
+never installed on this host) plus a novelty bonus from comparing each
+check's current bad/healthy state against the same query `offset 6h`: 0 if
+it was already bad back then too (chronic, deprioritized without any
+hand-maintained exclusion list), 20 if it was healthy then and bad now
+(genuinely new), 10 (neutral) if there's no data that far back to compare
+against yet. That third case is the common one for a while after any
+Prometheus restart — see the reliability note below — and is expected to
+self-resolve into real 0/20 verdicts as history accumulates, not a bug.
+
+An earlier version used `changes(gauge[6h])` instead of the offset
+comparison, on the theory that a low change count meant "hasn't moved,
+therefore stable." That's wrong: `changes()` can't distinguish "flipped
+once and has stayed bad since" from "was already bad before the window
+even started" — both produce zero recorded changes within the window. It
+scored the chronic ssh case at the *maximum* possible bonus instead of
+zero. Also note PromQL requires `offset` directly after the bare selector,
+before any comparison (`sel offset 6h == 0`) — `(sel == 0) offset 6h` is a
+parse error, which is why `CHECKS` stores selector and comparator
+separately rather than as one combined PromQL string.
+
+**Prometheus reload vs. restart:** `--web.enable-lifecycle` is enabled on
+this Prometheus, so scrape-config-only changes should go through
+`curl -X POST http://localhost:9090/-/reload`, not
+`systemctl restart prometheus`. Discovered why this matters while
+debugging the priority watchdog on 2026-07-27: the newest *compacted*
+(on-disk, durable) TSDB block was found to cover only up to 2026-07-24
+11:00 — a ~69-hour gap versus "now" — meaning days of recent history
+existed only in the in-memory head block/WAL, not on disk. A `systemctl
+restart` (done three times that day, once per new watchdog's scrape job)
+risks losing however much of that uncompacted window doesn't survive WAL
+replay; empirically only ~30-45 minutes reliably came back after the most
+recent one. A reload avoids the restart entirely for config-only changes.
 
 **Security posture note:** the watchdog ports (8011–8014) are bound to
 `0.0.0.0` at the socket level, not `127.0.0.1` — ufw's explicit
