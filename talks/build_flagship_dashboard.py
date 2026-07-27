@@ -118,12 +118,40 @@ panels.append(gauge_panel("Health Score", "aiops_health_score", x=6, y=1))
 panels.append(gauge_panel("Security Score", "aiops_security_score", x=12, y=1))
 panels.append(gauge_panel("AI Risk Score", "ai_risk_score", x=18, y=1))
 
-# ── Row 2: Recent Events ─────────────────────────────────────────────────────
-panels.append(row("Recent Events", 7))
+# ── Row 2: Priority Warnings ─────────────────────────────────────────────────
+# Cross-source triage from aiops-watchdog-priority.py: currently-firing
+# Prometheus ALERTS, Guardian's own health/security/AI-risk/Windows/log
+# checks, and all_check.service, ranked by tier + whether each check just
+# changed state vs. has been chronically bad -- see CLAUDE.md's
+# aiops-watchdog-priority.py section for why raw warning-line counting
+# doesn't work here (all_check.py's ssh check alone would swamp any such
+# view). Sorted descending so the most important warning is always the
+# top row; empty when nothing's currently flagged.
+panels.append(row("Priority Warnings", 7))
+panels.append({
+    "type": "table",
+    "title": "Top Priority Warnings (all sources, ranked)",
+    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+    "datasource": PROM_DS,
+    "targets": [{"expr": "aiops_priority_score", "datasource": PROM_DS, "refId": "A", "instant": True, "format": "table"}],
+    "fieldConfig": {"defaults": {}, "overrides": []},
+    "transformations": [{
+        "id": "organize",
+        "options": {
+            "excludeByName": {"Time": True, "instance": True, "job": True, "__name__": True},
+            "indexByName": {"tier": 0, "check": 1, "detail": 2, "Value": 3},
+            "renameByName": {"Value": "Priority"},
+        },
+    }],
+    "options": {"sortBy": [{"desc": True, "displayName": "Priority"}]},
+})
+
+# ── Row 3: Recent Events ─────────────────────────────────────────────────────
+panels.append(row("Recent Events", 16))
 panels.append({
     "type": "table",
     "title": "Currently Firing Alerts",
-    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
     "datasource": PROM_DS,
     "targets": [{"expr": 'ALERTS{alertstate="firing"}', "datasource": PROM_DS, "refId": "A", "instant": True, "format": "table"}],
     "fieldConfig": {"defaults": {}, "overrides": []},
@@ -131,20 +159,20 @@ panels.append({
 panels.append({
     "type": "annolist",
     "title": "Guardian Events (Annotations)",
-    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
     "options": {"tags": ["guardian"], "limit": 20, "showUser": False, "showTime": True, "showTags": True},
 })
 
-# ── Row 3: Anomaly Detection: Model Agreement ────────────────────────────────
-panels.append(row("Anomaly Detection: Model Agreement", 16))
+# ── Row 4: Anomaly Detection: Model Agreement ────────────────────────────────
+panels.append(row("Anomaly Detection: Model Agreement", 25))
 model_thresholds = {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}
-panels.append(stat_panel("KNN", 'aiops_anomaly_label{job="aiops-watchdog-knn"}', x=0, y=17, w=8, h=4, thresholds=model_thresholds))
-panels.append(stat_panel("Isolation Forest", 'aiops_anomaly_label{job="aiops-watchdog-iforest"}', x=8, y=17, w=8, h=4, thresholds=model_thresholds))
-panels.append(stat_panel("Autoencoder", 'aiops_anomaly_label{job="aiops-watchdog-autoencoder"}', x=16, y=17, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("KNN", 'aiops_anomaly_label{job="aiops-watchdog-knn"}', x=0, y=26, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("Isolation Forest", 'aiops_anomaly_label{job="aiops-watchdog-iforest"}', x=8, y=26, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("Autoencoder", 'aiops_anomaly_label{job="aiops-watchdog-autoencoder"}', x=16, y=26, w=8, h=4, thresholds=model_thresholds))
 panels.append({
     "type": "timeseries",
     "title": "Model Agreement Over Time",
-    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
+    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 30},
     "datasource": PROM_DS,
     "targets": [
         {"expr": 'aiops_anomaly_label{job="aiops-watchdog-knn"}', "datasource": PROM_DS, "refId": "A", "legendFormat": "KNN"},
@@ -154,22 +182,22 @@ panels.append({
     "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []},
 })
 
-# ── Row 4: Security Detail ───────────────────────────────────────────────────
-panels.append(row("Security Detail", 29))
-panels.append(stat_panel("UFW Enabled", "aiops_security_ufw_enabled", x=0, y=30, w=5, h=5,
+# ── Row 5: Security Detail ───────────────────────────────────────────────────
+panels.append(row("Security Detail", 38))
+panels.append(stat_panel("UFW Enabled", "aiops_security_ufw_enabled", x=0, y=39, w=5, h=5,
                           thresholds={"mode": "absolute", "steps": [{"color": "red", "value": None}, {"color": "green", "value": 1}]}))
-panels.append(stat_panel("Open Ports", "aiops_security_open_ports_count", x=5, y=30, w=5, h=5))
-panels.append(stat_panel("Failed Logins (recent)", "aiops_security_failed_logins_recent", x=10, y=30, w=5, h=5))
-panels.append(stat_panel("Root SSH Enabled", "aiops_security_root_ssh_enabled", x=15, y=30, w=4, h=5,
+panels.append(stat_panel("Open Ports", "aiops_security_open_ports_count", x=5, y=39, w=5, h=5))
+panels.append(stat_panel("Failed Logins (recent)", "aiops_security_failed_logins_recent", x=10, y=39, w=5, h=5))
+panels.append(stat_panel("Root SSH Enabled", "aiops_security_root_ssh_enabled", x=15, y=39, w=4, h=5,
                           thresholds={"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}))
-panels.append(stat_panel("Updates Pending", "aiops_security_updates_pending", x=19, y=30, w=5, h=5))
+panels.append(stat_panel("Updates Pending", "aiops_security_updates_pending", x=19, y=39, w=5, h=5))
 
-# ── Row 5: Go Deeper ──────────────────────────────────────────────────────────
-panels.append(row("Go Deeper", 35))
+# ── Row 6: Go Deeper ──────────────────────────────────────────────────────────
+panels.append(row("Go Deeper", 44))
 panels.append({
     "type": "text",
     "title": "Component Dashboards",
-    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 36},
+    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 45},
     "options": {
         "mode": "markdown",
         "content": (
