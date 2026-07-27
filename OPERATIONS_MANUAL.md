@@ -280,14 +280,14 @@ The three ML watchdogs (`knn`/`iforest`/`autoencoder`) now share a common implem
 | iForest watchdog | 8012 | 0.0.0.0 | No (same pattern) |
 | Autoencoder watchdog | 8013 | 0.0.0.0 | No (same pattern) |
 | Guardian Health | 8014 | 0.0.0.0 | No (same pattern) |
-| Windows watchdog | 8016 | 0.0.0.0 | **Yes — no UFW rule found covering this port** (gap, see Chapter 7) |
-| Logs watchdog | 8017 | 0.0.0.0 | **Yes — same gap** |
-| Priority watchdog | 8018 | 0.0.0.0 | **Yes — same gap** |
+| Windows watchdog | 8016 | 0.0.0.0 | No (UFW ALLOW-127.0.0.1 + DENY-Anywhere, added 2026-07-27 to close a gap found writing this manual) |
+| Logs watchdog | 8017 | 0.0.0.0 | No (same fix) |
+| Priority watchdog | 8018 | 0.0.0.0 | No (same fix) |
 | Approval dashboard | 8020 | 0.0.0.0 | Yes (explicit UFW ALLOW-Anywhere, intentional) |
 | Tempo (HTTP/gRPC/HTTP) | 3200/4317/4318 | 127.0.0.1 | No |
 | Alertmanager | 9093 | — | (not checked directly; internal to Prometheus↔Alertmanager) |
 
-The 8016/8017/8018 gap is real and current as of this revision — flagged here rather than silently fixed, since firewall changes weren't part of this manual-update task. See Chapter 7.
+**Closed 2026-07-27:** the 8016/8017/8018 gap identified while writing this revision was fixed the same day — matching UFW rules added (ALLOW-127.0.0.1 + DENY-Anywhere, v4 and v6) for all three ports. See Chapter 7.
 
 ### 3.10 Summary
 
@@ -580,7 +580,7 @@ UFW is **active** (default deny incoming/routed, allow outgoing) — this supers
 3200, 4317, 4318            ALLOW IN  127.0.0.1  +  DENY IN  Anywhere   (Tempo)
 ```
 
-**Gap found while writing this revision:** ports **8016, 8017, 8018** (Windows/Logs/Priority watchdogs) are bound to `0.0.0.0` with **no corresponding UFW rule at all** — unlike 8011-8014, which follow the established ALLOW-127.0.0.1 + DENY-Anywhere pattern. These three ports were added this session without extending that pattern to them. They only expose Prometheus `/metrics` data (no credentials, no control-plane actions), so the severity is low, but it's a real, current inconsistency worth a deliberate decision (add matching UFW rules, or confirm the exposure is acceptable) rather than leaving it unnoticed.
+**Gap found while writing this revision, closed same day (2026-07-27):** ports **8016, 8017, 8018** (Windows/Logs/Priority watchdogs) were bound to `0.0.0.0` with no corresponding UFW rule at all — unlike 8011-8014, which follow the established ALLOW-127.0.0.1 + DENY-Anywhere pattern. These three ports were added earlier this session without extending that pattern to them. Matching rules (v4 and v6) have since been added for all three, verified via `ufw status verbose`.
 
 The bind-address-vs-firewall distinction from April still holds: watchdog ports bind to `0.0.0.0` at the socket level; UFW's explicit DENY rules are what actually keep them non-external, not the bind address — `check_watchdog_port_external_access()`/`_ufw_denies_port_externally()` (in `guardian_ai_risk.py` now) check ufw rules directly (both v4 and v6) rather than only testing raw reachability.
 
@@ -701,12 +701,12 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **60 unnoticed `ruff` lint errors → fixed**, including a real logic bug (`_ufw_denies_port_externally()` missing IPv6-only DENY rules).
 - **Autoencoder "not running as a service" → live systemd service.**
 - **No rule-based interpretation of live state → `generate_report.py`.**
+- **8016/8017/8018 had no UFW coverage → fixed same-day.** Found while writing this revision, closed by adding the same ALLOW-127.0.0.1 + DENY-Anywhere pattern already used for 8011-8014.
 
 ### 10.2 Still Open
 
 - **`RECENT_ROWS` inconsistency** across `retrain_recent*.py` scripts (Chapter 4.13) — nothing currently checks sibling scripts stay consistent; this is a process gap, not just a one-time bug.
 - **KNN sustained-anomaly drift, 4th recurrence as of this revision** (2026-07-13, -16, -17, -27) — same promtail-write-rate signature each time. Retraining has worked as a stopgap every time, but if it recurs a 5th time, the right fix is probably structural (a training window that better captures promtail's write-burst variability, or handling that feature's sensitivity differently) rather than "retrain again."
-- **8016/8017/8018 firewall coverage gap** (Chapter 7.3) — found while writing this revision, not yet decided/fixed.
 - **No secrets manager** — config lives in plaintext systemd env drop-ins.
 - **`trace_suspect.sh`'s passwordless sudo accepts an unrestricted wildcard argument** — worth a second look as a privilege-escalation surface.
 - **No staging environment** — this box is prod, dev, and workstation simultaneously; every change is tested live.
