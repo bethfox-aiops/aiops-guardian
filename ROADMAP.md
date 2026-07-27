@@ -180,6 +180,16 @@ Concrete, currently-missing pieces, in rough priority order:
    and/or the NIST AI RMF are the two named in the framing that prompted this)
    instead of the current ad-hoc dict. This is what turns "we check some
    things" into something an auditor would recognize as governance.
+   **Related existing work, found 2026-07-27 while auditing docs vs.
+   reality:** `~/aiops-guardrail-lab/scripts/guardrail_exporter.py` (untracked,
+   outside this repo, running as `guardrail-exporter.service` since 2026-07-19)
+   already counts ALLOW/BLOCK/APPROVED/DENIED/INVALID actions and risk tiers
+   from a guardrail-decision log — see `VISION.md`'s Governance Engine note.
+   It's a real v1, but built independently of `behavioral_policy.py` against
+   simulated data, not integrated with it. Merging the two into one coherent
+   Guardrails component (one action-classification/logging model, one set of
+   Prometheus metrics, ideally framework-mapped per this item) is the concrete
+   next step here, not building Guardrails from scratch.
 3. **Genuinely tamper-evident logging**, not just observable logging. Today's
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed

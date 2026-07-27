@@ -1,27 +1,23 @@
 # AIOps Guardian
 
-A local AIOps experimentation platform combining:
+A locally deployed AIOps platform: real-time system/security telemetry, ML-based
+anomaly detection, health/security/AI-risk scoring, and a Behavioral Attestation
+engine that attributes *why* anomalies happen and verifies runtime behavior
+against declared expectations — with dashboards, logs, tracing, and Slack
+alerting throughout.
 
-- Prometheus metrics exporters
-- Grafana dashboards
-- machine learning anomaly detection (KNN + Isolation Forest)
+## Where to look
 
-## Components
+This README is intentionally short — it's a map, not the manual. Detail lives in:
 
-aiops-watchdog-knn.py  
-Prometheus exporter that collects system telemetry and runs anomaly detection.
+- **[`OPERATIONS_MANUAL.md`](OPERATIONS_MANUAL.md)** — the full operations and architecture reference: every service, script, dashboard, runbook procedure, and known gap. Start here for anything operational.
+- **[`CLAUDE.md`](CLAUDE.md)** — the terse, code-first version of the above, written for an AI coding assistant working in this repo.
+- **[`VISION.md`](VISION.md)** — the long-term architectural direction (the five-engine model, the north-star question this project is organized around).
+- **[`ROADMAP.md`](ROADMAP.md)** — the phased, mutable execution plan for the Behavioral Attestation engine, plus honest gap-tracking notes.
+- **[`EDGE_ARCHITECTURE.md`](EDGE_ARCHITECTURE.md)** — future-state plan for deploying Guardian to customer sites (planning only, not built).
 
-aiops-watchdog-ml.py  
-Data collection pipeline for training datasets.
+## Stack (high level)
 
-train_knn_final.py  
-KNN anomaly detection training script.
+Prometheus + Grafana (metrics/dashboards) · Loki + Promtail (logs) · Tempo (traces) · Alertmanager → Slack (alerts) · Python (watchdogs, ML models, Behavioral Attestation modules) · systemd (service management)
 
-train_iforest.py  
-Isolation Forest training script.
-
-## Stack
-
-Prometheus → metrics collection  
-Grafana → visualization dashboards  
-Python → exporters and ML models
+Three ML models (KNN, Isolation Forest, Autoencoder) run as live watchdog services alongside health/security/AI-risk scoring, Windows-fleet monitoring, log-anomaly detection, and cross-source priority triage — see `OPERATIONS_MANUAL.md` Chapter 3 for the full service inventory.

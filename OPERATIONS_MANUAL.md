@@ -136,7 +136,7 @@ That's a stronger claim than "detect anomalies" — it's the difference between 
 ### 2.3 Core Components
 
 **Monitoring & Metrics:** Prometheus, Python exporters (8 watchdog/health services, see Ch. 3)
-**Visualization:** Grafana (flagship dashboard, 16 panels)
+**Visualization:** Grafana — 10 dashboards total; see Chapter 3.3 for the full inventory (4 Guardian-specific, 4 supporting/imported, 2 empty leftover stubs)
 **Logging & Tracing:** Loki + Promtail (logs), **Tempo** (distributed traces — new)
 **Machine Learning:** KNN (primary), Isolation Forest, Autoencoder — **all three now live as systemd services** (the autoencoder was experimental/not-running-as-a-service in the April manual; that's since resolved)
 **Behavioral Attestation (new engine, entirely absent from the April manual):** process attribution, eBPF syscall tracing, OpenTelemetry traces, GPU-per-process accounting, declarative policy verification, release provenance records — see Chapter 5
@@ -153,7 +153,7 @@ Guardian
 ├── Observability Engine     — metrics, logs, dashboards
 ├── ML Engine                — KNN, Isolation Forest, Autoencoder
 ├── Security Engine          — file integrity, user monitoring, SSH, AI security
-├── Governance Engine        — guardrails, human approval, policy
+├── Governance Engine        — guardrails (v1 live), human approval, policy
 └── Behavioral Attestation   — trace collection, eBPF, OpenTelemetry, GPU tracing,
     Engine (new, 2026-07)      process attribution, root cause, workflow verification
 ```
@@ -215,8 +215,38 @@ Operational reference for every service Guardian depends on: role, config locati
 - Location: `/etc/grafana/`; Port: 3000
 - `sudo systemctl {start|stop|restart|status} grafana-server`
 - Verify: `http://localhost:3000`
-- Flagship dashboard: **AIOps Autoencoder Anomaly Detection** (uid `4b70bb0f-5cca-4f0c-9a01-43b1001d0042`), now 16 panels including suspect-process tables, CPU%/Mem% by watchdog, GPU metrics, syscall evidence, and a Priority Warnings panel (new)
-- Push updates via the Grafana HTTP API using a **service account token** (`guardian-dashboard-deploy`, Editor role) — admin-password basic auth returns 401 at the API level even though UI login works. Always include the dashboard's `uid` in the POST body — omitting it creates a duplicate dashboard instead of updating, even with `overwrite: true`.
+- Push updates via the Grafana HTTP API using a **service account token** (`guardian-dashboard-deploy`, Editor role, stored in gitignored `.grafana_token`) — admin-password basic auth returns 401 at the API level even though UI login works. Always include the dashboard's `uid` in the POST body — omitting it creates a duplicate dashboard instead of updating, even with `overwrite: true`.
+
+#### 3.3.1 Dashboard Inventory (10 total, audited 2026-07-27)
+
+**Important naming note:** there is no single "the flagship dashboard" — that phrase was ambiguous in earlier revisions of this manual. There are two distinct, actively-maintained Guardian dashboards plus a genuinely separate one literally titled "Flagship." Disambiguated below.
+
+**Guardian-specific dashboards (4):**
+
+| Title | UID | Version | What it's for |
+|---|---|---|---|
+| **Guardian: Flagship Overview** | `guardian-flagship` | — | The newest one (built 2026-07-27 by `talks/build_flagship_dashboard.py`, a build script — not hand-edited JSON, not part of the running system, re-run to update). 6 rows / ~17 panels: Guardian Status at a Glance (health/security/AI-risk scores), Priority Warnings (the `aiops-watchdog-priority` triage table), Recent Events (firing alerts + a Grafana-annotations list fed by `grafana_annotate.py`), Model Agreement Over Time (all 3 ML watchdogs side by side), Security Detail (UFW/ports/logins/root-SSH/updates), and a "Go Deeper" panel linking to the component dashboards below. Intended as the single screen for a talk/demo/portfolio walkthrough. |
+| **AI Anomaly Detection** | `ad6lc4j` | 199 | The original, most comprehensive dashboard — by far the highest version number in the system, meaning it's the most iterated-on and likely what's actually used day-to-day. 5 collapsed rows, ~65 panels: Anomaly Detection (KNN score/timeseries), **Security Posture** (~35 panels — the full detail behind Chapter 7.4's ~40 security gauges: `/etc/passwd`/`/etc/shadow`/`/etc/sudoers` integrity, SUID binaries, zombie processes, SSH keys, cron jobs, world-writable files, and more), AI Detection (AI risk score and every `guardian_ai_risk.py` factor), System Status (CPU/mem/disk/GPU/inode), and **System Guardrails** (Allowed/Blocked/Approved/Denied/Invalid counts — see the Guardrails note below, this is the panel that led to discovering `~/aiops-guardrail-lab`). |
+| **AIOps Autoencoder Anomaly Detection** | `4b70bb0f-5cca-4f0c-9a01-43b1001d0042` | 11 | The per-model Behavioral Attestation dashboard built up through Phases 1–4 (Chapter 5): reconstruction error/anomaly score, suspect-process tables, CPU%/Mem% by watchdog, GPU metrics, syscall evidence. 16 panels, tracked in-repo as `grafana_autoencoder_dashboard.json` (verified in sync with the live dashboard as of this revision — both 16 panels). |
+| **Guardian Metrics - Cross Platform - Windows** | `ad8xfcb` | 18 | Backs `aiops-watchdog-windows.py` (Chapter 4.9): Windows Free Memory, CPU, Free Disk Space (C:), Physical Disk Busy %, Services Not Running, Process Count, OS Info, Network Throughput — one panel per Windows host metric surfaced from `windows_exporter` via Prometheus. |
+
+**Supporting/reference dashboards (4) — one line each, not bespoke Guardian architecture:**
+
+| Title | UID | Notes |
+|---|---|---|
+| System Metrics + Linked Logs | `metrics-logs` | Custom-built: CPU/Mem/Disk timeseries alongside a systemd-journal log panel — the practical Loki↔Prometheus correlation view, linked from the Flagship's "Go Deeper" panel. |
+| Loki Log Dashboard | `loki-logs` | Custom-built: live logs, error rate, top log sources — general-purpose log browsing, also linked from "Go Deeper." |
+| Node Exporter Full | `rYdddlPWk` | Standard imported community dashboard (the well-known Node Exporter Full board), not authored for this project. |
+| Kubernetes Cluster (Prometheus) | `4XuMd2Iiz` | Standard imported community dashboard — its own description states it was "taken from" a public repo. Only relevant if MicroK8s (Chapter 9) is running. |
+| LOKI | `dac964ae-8439-4b4a-b2fa-a108bd2f41dc` | Loki's own bundled default dashboard. |
+
+**Apparent clutter (2) — flagged, not touched:** two dashboards both literally titled "New dashboard" (`bda60430-8ab0-403c-aed3-42ba053cadca`, `ad4x54q`) exist with no custom content — look like empty stubs left over from UI experimentation. Likely safe to delete, but that's a Grafana UI action outside the scope of a documentation pass — left for the user to confirm and remove.
+
+#### 3.3.2 Guardrails Discovery (found while auditing this manual, 2026-07-27)
+
+The "System Guardrails" row on the **AI Anomaly Detection** dashboard (Allowed/Blocked/Approved/Denied/Invalid counts) is backed by real, live Prometheus metrics (`guardrail_allow_total`, `guardrail_block_total`, etc., job `guardrail_lab`, port 8015) — tracing this back led to `~/aiops-guardrail-lab/`, a small **untracked** (no git repo) directory containing `guardrail_v1.py` → `guardrail_v3.py` (an incremental learning exercise) and `guardrail_exporter.py` (the version now running as `guardrail-exporter.service`, since 2026-07-19). It classifies actions from a guardrail-decision log against simulated `prod-sim`/`backup-sim` customer data into allow/block/approve/deny/invalid and a low/medium/high/critical risk tier, exporting counts as Prometheus gauges.
+
+This is Guardrails' genuine first version (see `VISION.md`'s Governance Engine note) — real, running, and visible on a dashboard — but built independently of `behavioral_policy.py`'s Phase 5 verification, against simulated rather than real Guardian data, and living outside this repo entirely. Treat "Guardrails" in Chapter 2.4's engine table as **v1 live, not yet integrated** rather than either "not started" or "done" — see `ROADMAP.md`'s Phase 7 for the concrete next step (merging this exporter's classification model with `behavioral_policy.py` into one coherent, framework-mapped Guardrails component).
 
 ### 3.4 Loki
 
@@ -264,6 +294,7 @@ WATCHDOG_PORT=18011 /opt/aiops-venv/bin/python aiops-watchdog-knn.py
 | `aiops-watchdog-priority` | `aiops-watchdog-priority.py` | 8018 | **New.** Cross-source warning triage — ranks ALERTS/Guardian checks/legacy `all_check.service` by tier + novelty |
 | `aiops-approval` | `/usr/local/bin/aiops-approval.py` | 8020 | Governance Engine's Human Approval dashboard |
 | `disk_watchdog` | `disk_watchdog.py` | — (timer, oneshot) | Runs every 15 min via `disk_watchdog.timer`; `inactive (dead)` between runs is normal, not abandoned |
+| `guardrail-exporter` | `~/aiops-guardrail-lab/scripts/guardrail_exporter.py` (**outside this repo**, untracked) | 8015 | Governance Engine's Guardrails, v1 — see Chapter 3.3.2 |
 
 The three ML watchdogs (`knn`/`iforest`/`autoencoder`) now share a common implementation, `watchdog_common.py` — each script only supplies model-specific load/build-input/score logic; metric collection, GPU handling, and Behavioral Attestation attribution are identical across all three and live in the shared module. `aiops-guardian-health.py` was similarly split into `guardian_health.py`/`guardian_security.py`/`guardian_ai_risk.py` (per-engine) with shared state in `guardian_common.py`.
 
@@ -369,6 +400,8 @@ None of the retrain scripts restart the corresponding service automatically — 
 
 Every retrain run is now also instrumented with OpenTelemetry traces and Behavioral Attestation evidence — see Chapter 5.
 
+**`grafana_annotate.py` (undocumented until this revision):** posts a Grafana annotation — a labeled marker on dashboard timelines — when something worth flagging happens, e.g. a Phase 5 behavioral-policy verification failure (Chapter 5.5). Deliberately fails soft: if Grafana is unreachable or `.grafana_token` isn't configured, it prints a warning and moves on rather than breaking the retrain run that called it — annotating a dashboard is never worth crashing a retrain over. Uses the same Grafana service-account token as `talks/build_flagship_dashboard.py` (Chapter 4.17), not the admin login password, so it's independently revocable. Currently wired into `retrain_recent_knn.py` only — `retrain_recent.py` (autoencoder) and `retrain_recent_iforest.py` don't call it yet. Annotations tagged `guardian` surface in the Flagship dashboard's "Guardian Events (Annotations)" panel (Chapter 3.3.1).
+
 ### 4.14 Report Generation (new, not in April manual)
 
 `generate_report.py` — pulls live state from Prometheus and Grafana, diffs it against the previous run's snapshot (`report_state.json`), runs a small rule-based "playbook" engine to interpret what the numbers mean (severity-ranked: Critical/High/Medium/Low/Info), and renders a markdown report. This replaces what used to require an ad-hoc AI chat session each time to synthesize (`full_system_report_*.md` files were hand-written precedents). Manual invocation only for now (`python3 generate_report.py`), not yet wired to a systemd timer.
@@ -381,9 +414,16 @@ Every retrain run is now also instrumented with OpenTelemetry traces and Behavio
 
 All scripts expose `/metrics`, scraped by Prometheus, visualized in Grafana — unchanged pattern from April, just more services doing it.
 
-### 4.17 Summary
+### 4.17 Talks, Demos, and Dashboard Build Tooling (`talks/`, undocumented until this revision)
 
-The intelligence layer has grown from 3 ML watchdogs + 1 health script into 8 watchdog/health services plus a shared-code refactor, a report generator, and a real test suite — while the core collect→analyze→export loop from April is structurally unchanged.
+A `talks/` directory holds portfolio/presentation materials — not part of the running system, but real, git-tracked repo content:
+
+- **`build_flagship_dashboard.py`** — the actual source of the "Guardian: Flagship Overview" dashboard (Chapter 3.3.1). A one-off build script, not a service: constructs the full dashboard JSON in Python (helper functions for row/stat/gauge panels) and POSTs it to Grafana's API using the same `.grafana_token` as `grafana_annotate.py`. Uses a fixed `uid` (`guardian-flagship`) so re-running it updates the dashboard in place rather than creating duplicates — same gotcha as the general Grafana push pattern (Chapter 3.3). Re-run this script (not hand-edit JSON) whenever the Flagship dashboard needs a new panel — see the 2026-07-27 "Add Priority Warnings panel" commit for the working example.
+- **`defect-demo-recording-script.md`** — a ~4-5 minute recording script for a portfolio/talk video, "Catching a Bad AI-Driven Change." Walks through reproducing the real 2026-07-17 Phase 5 defect-catch (Chapter 5.6) on camera, including a safety-first model-file backup step before recording and framing language tying it to Guardian's north-star question (`VISION.md`). Not hypothetical — explicitly scripted to reproduce something that already happened for real, not a staged scenario.
+
+### 4.18 Summary
+
+The intelligence layer has grown from 3 ML watchdogs + 1 health script into 8 watchdog/health services plus a shared-code refactor, a report generator, a real test suite, and a set of portfolio/demo build tools — while the core collect→analyze→export loop from April is structurally unchanged.
 
 ---
 
@@ -600,7 +640,7 @@ Unchanged from April (codes 0-4: none / firewall disabled / updates pending / SS
 
 ### 7.7 Governance Practices
 
-The Human Approval piece of the Governance Engine (`aiops-approval.service`, port 8020) already exists and predates this revision. Guardrails/Policy formalization beyond `behavioral_policy.py`'s per-workflow rules (Chapter 5.5) has not happened yet.
+The Human Approval piece of the Governance Engine (`aiops-approval.service`, port 8020) already exists and predates this revision. Guardrails now also has a real v1 (`guardrail-exporter.service`, Chapter 3.3.2) — found during this revision's audit, running since 2026-07-19 but built outside this repo against simulated data, independent of `behavioral_policy.py`'s per-workflow rules (Chapter 5.5). The two are not yet integrated: one classifies logged actions into allow/block/approve/deny tiers, the other verifies workflow evidence against declarative policies — merging them into one coherent, framework-mapped Guardrails component is `ROADMAP.md`'s Phase 7 next step, not a from-scratch build.
 
 ### 7.8 Authentication Monitoring, Patch Management, SSH Security
 
@@ -712,6 +752,7 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **No staging environment** — this box is prod, dev, and workstation simultaneously; every change is tested live.
 - **No documented rollback procedure** beyond `git checkout --` for a single file; `Restart=always` is a crash-loop safety net, not an operations strategy.
 - **Alerting breadth** — only the 3 ML watchdogs have Prometheus alert rules; only Slack is wired up (Chapter 8.3).
+- **Documentation-vs-reality drift, found via a full audit this revision (2026-07-27):** three real implementations existed with zero documentation anywhere (a second Grafana dashboard, `grafana_annotate.py`, the `talks/` build tooling — all now fixed in this manual), a dashboard-naming collision in this manual's own earlier draft (now disambiguated, Chapter 3.3), `README.md`/`Futurework.md` were describing an April-or-earlier snapshot against a ~30-script repo (retired/rewritten, see below), and Guardrails turned out to have a real v1 that VISION.md and this manual both incorrectly described as "not yet formalized" (now corrected). Worth periodically re-running this kind of audit (grep every script against every doc, check live Grafana/Prometheus state against what docs claim) rather than assuming docs stay accurate as the system grows.
 
 ### 10.3 Proposed, Not Yet Scoped: Phase 7 — Govern the Agent, Not Just the Output
 

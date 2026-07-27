@@ -99,8 +99,25 @@ Guardian
 | Observability | Metrics + dashboards exist (Prometheus/Grafana); structured Logs engine does not yet exist |
 | ML | All three models running (KNN, Isolation Forest, Autoencoder watchdogs) |
 | Security | Running today via the Guardian security score (file integrity, SSH/user monitoring, AI security checks) |
-| Governance | Approval Dashboard (`aiops-approval.service`) already provides a Human Approval piece; Guardrails/Policy are not yet formalized |
+| Governance | Approval Dashboard (`aiops-approval.service`) provides the Human Approval piece; a first version of Guardrails also exists (`guardrail_exporter.py`, `~/aiops-guardrail-lab`, port 8015) — see note below |
 | Behavioral Attestation ⭐ | New — this is the next engine to build |
+
+**Guardrails, v1 (added 2026-07-27):** an early guardrail-policy exporter exists
+at `~/aiops-guardrail-lab/scripts/guardrail_exporter.py` (`guardrail-exporter.service`,
+port 8015, scraped by Prometheus as job `guardrail_lab`) — it counts
+ALLOW/BLOCK/APPROVED/DENIED/INVALID actions and LOW/MEDIUM/HIGH/CRITICAL risk
+tiers from a guardrail-decision log and exports them as Prometheus gauges
+(`guardrail_allow_total`, `guardrail_block_total`, etc.), surfaced on the
+"AI Anomaly Detection" Grafana dashboard's "System Guardrails" row. It grew
+through three incremental versions (`guardrail_v1.py` → `v3.py`) against
+simulated "prod"/"backup" customer data before becoming an exporter, and lives
+outside the `aiops-agents` git repo (untracked, no version control of its own)
+— treat it as this engine's genuine first version, not a finished Guardrails
+system: it counts and classifies actions from a log, it doesn't yet enforce
+anything or integrate with `behavioral_policy.py`'s Phase 5 verification.
+Formalizing/merging the two (this exporter's action-classification model and
+`behavioral_policy.py`'s per-workflow policy checks) into one real Guardrails
+component is exactly the kind of work Phase 7 (`ROADMAP.md`) should absorb.
 
 ## Deliberately narrow scope
 
