@@ -119,6 +119,23 @@ Formalizing/merging the two (this exporter's action-classification model and
 `behavioral_policy.py`'s per-workflow policy checks) into one real Guardrails
 component is exactly the kind of work Phase 7 (`ROADMAP.md`) should absorb.
 
+**The motivating idea behind it (clarified 2026-07-27), worth preserving
+because it's easy to lose in the exporter/dashboard mechanics above:** the
+lab wasn't just a tutorial exercise — it was a deliberate test of *limiting
+what a script is allowed to execute* as a form of AI governance, built on a
+specific belief: **systems engineers can cause an AI agent to do things it
+shouldn't, by accident**, through the tooling/scripts/permissions they hand
+it, not only through the agent's own decisions. This is a distinct failure
+mode from "the agent needs its own scoped identity" (Phase 7 item 1 below) —
+that item is about the *agent's* privilege boundary; this is about the
+*human's own tooling design* being a governance surface in its own right. An
+engineer who writes a script an AI agent will run doesn't need to intend
+over-permissioning for it to happen — an overly broad shell wrapper, a
+too-permissive sudoers entry, a script that takes unvalidated input, all hand
+an agent more capability than the task in front of it needs. Guardrails, in
+this framing, are as much about constraining what *engineers accidentally
+build for agents to use* as about constraining the agent itself.
+
 ## Deliberately narrow scope
 
 The temptation is to build "performance attribution for everything." Don't.

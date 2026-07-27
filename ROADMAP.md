@@ -176,7 +176,26 @@ Concrete, currently-missing pieces, in rough priority order:
    narrower identity (e.g. a separate, tightly-scoped sudoers profile or a
    dedicated service account) with only the access a given task actually
    needs, not blanket inheritance of the human's session.
-2. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001
+2. **Govern the tooling engineers hand the agent, not just the agent's
+   identity** (clarified 2026-07-27 — this is the actual motivating idea
+   behind `~/aiops-guardrail-lab`, item 2 below). Item 1 above is about the
+   agent's own privilege boundary; this is a distinct failure mode: **a
+   systems engineer can cause an AI agent to do things it shouldn't, by
+   accident**, simply by how they build the scripts/wrappers/sudoers entries
+   the agent is expected to run — an overly broad shell wrapper, a
+   too-permissive sudoers rule, a script that doesn't validate its input, all
+   hand an agent more capability than the task in front of it needs, with no
+   bad intent required on either the engineer's or the agent's part. This
+   repo already has one concrete near-miss worth revisiting under this lens:
+   `trace_suspect.sh`'s passwordless sudo rule accepts an unrestricted
+   wildcard argument (flagged separately in `OPERATIONS_MANUAL.md` Chapter
+   10.2) — exactly the kind of engineer-authored tooling gap this item is
+   about, not an agent misbehaving. Concretely: audit every script/wrapper an
+   AI agent is expected to invoke (not just the agent's own sudo profile) for
+   over-broad arguments, unscoped file access, or missing input validation,
+   and treat that audit as its own governance checklist, separate from
+   agent-identity work.
+3. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001
    and/or the NIST AI RMF are the two named in the framing that prompted this)
    instead of the current ad-hoc dict. This is what turns "we check some
    things" into something an auditor would recognize as governance.
@@ -190,7 +209,7 @@ Concrete, currently-missing pieces, in rough priority order:
    Guardrails component (one action-classification/logging model, one set of
    Prometheus metrics, ideally framework-mapped per this item) is the concrete
    next step here, not building Guardrails from scratch.
-3. **Genuinely tamper-evident logging**, not just observable logging. Today's
+4. **Genuinely tamper-evident logging**, not just observable logging. Today's
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed
    or append-only — a privileged actor (including an AI agent with broad

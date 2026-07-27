@@ -757,11 +757,12 @@ This chapter did not exist in the April manual in this form — it consolidates 
 
 ### 10.3 Proposed, Not Yet Scoped: Phase 7 — Govern the Agent, Not Just the Output
 
-From `ROADMAP.md` (proposed 2026-07-20): Phase 6 proves what an AI-driven change *did*; this would prove the agent making changes was *governed while doing it* — the distinction a real audit actually cares about. Three concrete, currently-missing pieces, in rough priority order:
+From `ROADMAP.md` (proposed 2026-07-20): Phase 6 proves what an AI-driven change *did*; this would prove the agent making changes was *governed while doing it* — the distinction a real audit actually cares about. Four concrete, currently-missing pieces, in rough priority order:
 
 1. **A scoped identity for the agent**, not the developer's own full, unscoped session (today, Claude Code operates with the same sudo/git/filesystem reach as the human).
-2. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001 and/or NIST AI RMF) instead of an ad-hoc dict.
-3. **Genuinely tamper-evident logging** — today's evidence trail (journal, OTel/Tempo, `release_record.py` JSON) is observable but not cryptographically signed or append-only. Hash-chaining `releases/*.json` (each record includes the previous one's hash) is the simplest starting point before reaching for anything heavier.
+2. **Govern the tooling engineers hand the agent, not just the agent's identity** (clarified 2026-07-27 — the actual motivating idea behind `~/aiops-guardrail-lab`, Chapter 3.3.2). Distinct from item 1: a systems engineer can cause an AI agent to do things it shouldn't *by accident*, through overly broad scripts/wrappers/sudoers rules, no bad intent required on either side. `trace_suspect.sh`'s passwordless sudo accepting an unrestricted wildcard argument (Chapter 10.2) is a concrete near-miss under this exact lens. Concretely: audit every script an agent is expected to invoke for over-broad arguments or missing input validation, as its own checklist separate from agent-identity work.
+3. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001 and/or NIST AI RMF) instead of an ad-hoc dict.
+4. **Genuinely tamper-evident logging** — today's evidence trail (journal, OTel/Tempo, `release_record.py` JSON) is observable but not cryptographically signed or append-only. Hash-chaining `releases/*.json` (each record includes the previous one's hash) is the simplest starting point before reaching for anything heavier.
 
 Not fully designed yet — a real gap worth tracking, not a plan ready to execute.
 
