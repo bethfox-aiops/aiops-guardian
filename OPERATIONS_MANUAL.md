@@ -136,7 +136,7 @@ That's a stronger claim than "detect anomalies" — it's the difference between 
 ### 2.3 Core Components
 
 **Monitoring & Metrics:** Prometheus, Python exporters (8 watchdog/health services, see Ch. 3)
-**Visualization:** Grafana — 10 dashboards total; see Chapter 3.3 for the full inventory (4 Guardian-specific, 4 supporting/imported, 2 empty leftover stubs)
+**Visualization:** Grafana — 9 dashboards total; see Chapter 3.3 for the full inventory (4 Guardian-specific, 4 supporting/imported, plus the standard bundled Loki board)
 **Logging & Tracing:** Loki + Promtail (logs), **Tempo** (distributed traces — new)
 **Machine Learning:** KNN (primary), Isolation Forest, Autoencoder — **all three now live as systemd services** (the autoencoder was experimental/not-running-as-a-service in the April manual; that's since resolved)
 **Behavioral Attestation (new engine, entirely absent from the April manual):** process attribution, eBPF syscall tracing, OpenTelemetry traces, GPU-per-process accounting, declarative policy verification, release provenance records — see Chapter 5
@@ -217,7 +217,7 @@ Operational reference for every service Guardian depends on: role, config locati
 - Verify: `http://localhost:3000`
 - Push updates via the Grafana HTTP API using a **service account token** (`guardian-dashboard-deploy`, Editor role, stored in gitignored `.grafana_token`) — admin-password basic auth returns 401 at the API level even though UI login works. Always include the dashboard's `uid` in the POST body — omitting it creates a duplicate dashboard instead of updating, even with `overwrite: true`.
 
-#### 3.3.1 Dashboard Inventory (10 total, audited 2026-07-27)
+#### 3.3.1 Dashboard Inventory (9 total, audited 2026-07-27)
 
 **Important naming note:** there is no single "the flagship dashboard" — that phrase was ambiguous in earlier revisions of this manual. There are two distinct, actively-maintained Guardian dashboards plus a genuinely separate one literally titled "Flagship." Disambiguated below.
 
@@ -240,7 +240,7 @@ Operational reference for every service Guardian depends on: role, config locati
 | Kubernetes Cluster (Prometheus) | `4XuMd2Iiz` | Standard imported community dashboard — its own description states it was "taken from" a public repo. Only relevant if MicroK8s (Chapter 9) is running. |
 | LOKI | `dac964ae-8439-4b4a-b2fa-a108bd2f41dc` | Loki's own bundled default dashboard. |
 
-**Apparent clutter (2) — flagged, not touched:** two dashboards both literally titled "New dashboard" (`bda60430-8ab0-403c-aed3-42ba053cadca`, `ad4x54q`) exist with no custom content — look like empty stubs left over from UI experimentation. Likely safe to delete, but that's a Grafana UI action outside the scope of a documentation pass — left for the user to confirm and remove.
+**Clutter, closed 2026-07-27:** two empty dashboards both literally titled "New dashboard" (`bda60430-8ab0-403c-aed3-42ba053cadca`, `ad4x54q`) were found with no custom content — leftover stubs from UI experimentation. Deleted via the Grafana API same day; confirmed gone via `/api/search`.
 
 #### 3.3.2 Guardrails Discovery (found while auditing this manual, 2026-07-27)
 
@@ -742,6 +742,7 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **Autoencoder "not running as a service" → live systemd service.**
 - **No rule-based interpretation of live state → `generate_report.py`.**
 - **8016/8017/8018 had no UFW coverage → fixed same-day.** Found while writing this revision, closed by adding the same ALLOW-127.0.0.1 + DENY-Anywhere pattern already used for 8011-8014.
+- **2 empty "New dashboard" stubs → deleted.** Found during the dashboard-inventory audit, removed via the Grafana API same day.
 
 ### 10.2 Still Open
 
