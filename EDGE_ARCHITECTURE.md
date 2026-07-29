@@ -92,6 +92,19 @@ No language/implementation decision has been made yet; this is just a
 stated requirement to design for once endpoint-agent work actually starts
 (Milestone 3, not before).
 
+**Related but distinct (2026-07-29):** `windows/guardian_disk_health.ps1`
+in this repo is a real PowerShell collector deployed to a Windows host, but
+it is **not** an early version of the endpoint agent above — it's a narrow
+disk-health diagnostic (SMART/reliability counters + Event Log data) that
+writes a local file for `windows_exporter`'s own `textfile` collector to
+pick up, built in response to a real drive-failure investigation (see
+`OPERATIONS_MANUAL.md` Chapter 4.9). It never accepts a request, runs
+arbitrary approved checks, or pushes evidence anywhere — the three things
+that would make it a genuine first version of this document's endpoint
+agent. Worth knowing it exists as prior art (real PowerShell running
+unattended on a Windows host via Scheduled Task) if/when Milestone 3 work
+actually starts, but don't conflate the two.
+
 ## Rollout plan — deliberately slow, milestone-based
 
 The conversation's own conclusion was to **slow down** rather than design
