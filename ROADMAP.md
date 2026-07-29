@@ -185,16 +185,27 @@ Concrete, currently-missing pieces, in rough priority order:
    the agent is expected to run — an overly broad shell wrapper, a
    too-permissive sudoers rule, a script that doesn't validate its input, all
    hand an agent more capability than the task in front of it needs, with no
-   bad intent required on either the engineer's or the agent's part. This
-   repo already has one concrete near-miss worth revisiting under this lens:
-   `trace_suspect.sh`'s passwordless sudo rule accepts an unrestricted
-   wildcard argument (flagged separately in `OPERATIONS_MANUAL.md` Chapter
-   10.2) — exactly the kind of engineer-authored tooling gap this item is
-   about, not an agent misbehaving. Concretely: audit every script/wrapper an
-   AI agent is expected to invoke (not just the agent's own sudo profile) for
-   over-broad arguments, unscoped file access, or missing input validation,
-   and treat that audit as its own governance checklist, separate from
-   agent-identity work.
+   bad intent required on either the engineer's or the agent's part.
+
+   **First concrete instance found and closed (2026-07-29):**
+   `trace_suspect.sh`'s passwordless sudo rule accepted an unrestricted
+   wildcard PID argument — exactly the kind of engineer-authored tooling gap
+   this item is about, not an agent misbehaving. Confirmed exploitable, not
+   just theoretical: `beth` could run `sudo -n trace_suspect.sh 1` and get a
+   real root-level eBPF trace of PID 1 (`systemd`), with zero connection to
+   Guardian's own detection logic. PID-ownership restriction was considered
+   and rejected — `promtail`, this feature's real validating use case, runs
+   as root, so "only trace beth-owned PIDs" would have broken it. Fixed
+   instead with a ticket mechanism: `ebpf_trace.py` now writes the intended
+   PID + timestamp to a short-lived `.trace_ticket` file immediately before
+   calling `sudo`, and `trace_suspect.sh` refuses to run unless a fresh,
+   matching ticket exists — verified in all four directions (no ticket,
+   wrong-PID ticket, stale ticket, valid ticket). Full detail in
+   `OPERATIONS_MANUAL.md` Chapter 5.2. Concretely, going forward: audit every
+   other script/wrapper an AI agent is expected to invoke (not just the
+   agent's own sudo profile) for the same class of gap — over-broad
+   arguments, unscoped file access, missing input validation — as an ongoing
+   governance checklist, not a one-time fix.
 3. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001
    and/or the NIST AI RMF are the two named in the framing that prompted this)
    instead of the current ad-hoc dict. This is what turns "we check some
@@ -303,8 +314,13 @@ grouped so they're actionable later:
 - Watchdog ports bind to `0.0.0.0` (not `127.0.0.1` as code comments claim);
   `ufw`'s DENY rule is the *only* thing preventing external exposure — single
   point of failure, not defense-in-depth.
-- Passwordless sudo for `trace_suspect.sh` accepts an unrestricted wildcard
-  argument — a real privilege-escalation surface worth a second look.
+- **Closed (2026-07-29):** passwordless sudo for `trace_suspect.sh` used to
+  accept an unrestricted wildcard PID argument — confirmed exploitable as a
+  real root-level eBPF trace of PID 1, unrelated to Guardian's own detection
+  logic. Fixed with a ticket mechanism (`ebpf_trace.py` writes the intended
+  PID to a short-lived file immediately before calling `sudo`;
+  `trace_suspect.sh` refuses without a fresh, matching ticket) — see Phase 7
+  item 2 above for full detail.
 - No secrets manager; config lives in plaintext systemd env drop-ins.
 
 **Operational supportability**

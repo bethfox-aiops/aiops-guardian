@@ -12,6 +12,7 @@ Rate-limited per PID so a long-sustained anomaly doesn't spawn a fresh
 privileged trace on every watchdog tick.
 """
 
+import os
 import subprocess
 import time
 
@@ -19,7 +20,27 @@ TRACE_SCRIPT = "/home/beth/aiops-agents/trace_suspect.sh"
 SUDO = "/usr/bin/sudo"
 COOLDOWN_SECONDS = 60
 
+# Ticket file proving *this* code path is the one requesting a trace, not an
+# arbitrary "sudo trace_suspect.sh <any pid>" invocation from elsewhere on the
+# box. The sudoers NOPASSWD rule for trace_suspect.sh has no way to scope
+# *which* PID is legitimate to trace (a bare wildcard), and PID ownership
+# can't be used to scope it either -- promtail, Guardian's own most-traced
+# real suspect, runs as root, so "only trace beth-owned PIDs" would break the
+# feature this exists for. Writing the intended PID here immediately before
+# the sudo call, and having trace_suspect.sh require a fresh, matching ticket,
+# closes that gap without narrowing which processes can legitimately be
+# traced. Lives next to this script rather than /run/user/<uid> because
+# systemd system services (User=beth, not a login session) don't get
+# XDG_RUNTIME_DIR -- this path exists regardless of login-session state.
+TICKET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".trace_ticket")
+
 _last_traced = {}  # pid -> unix timestamp of last trace
+
+
+def _write_ticket(pid):
+    fd = os.open(TICKET_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(f"{pid} {time.time()}\n")
 
 
 def trace_suspect_process(pid, timeout=5):
@@ -37,11 +58,12 @@ def trace_suspect_process(pid, timeout=5):
     _last_traced[pid] = now
 
     try:
+        _write_ticket(pid)
         result = subprocess.run(
             [SUDO, "-n", TRACE_SCRIPT, str(pid)],
             capture_output=True, text=True, timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
 
     # trace_suspect.sh runs bpftrace under `timeout 3`, which exits 124 on

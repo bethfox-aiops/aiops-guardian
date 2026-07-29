@@ -2,6 +2,7 @@
 __pycache__/
 aiops_data/
 .grafana_token
+.trace_ticket
 *.pkl
 *.bak
 *.csv
