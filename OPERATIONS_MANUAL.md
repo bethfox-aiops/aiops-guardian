@@ -666,6 +666,8 @@ Security moved from "four checks and a score" (April) to a ~44-gauge engine plus
 
 `/etc/prometheus/rules/aiops-alerts.yml`, referenced from `prometheus.yml`'s `rule_files`. Three rules, one per ML watchdog, all `for: 30m` on `aiops_anomaly_label{job="..."} == 1`, severity `warning`: `KNNWatchdogSustainedAnomaly`, `IForestWatchdogSustainedAnomaly`, `AutoencoderWatchdogSustainedAnomaly`. The 30-minute sustain window is why the Priority watchdog (Chapter 4.11) treats ALERTS-sourced signals as already-vetted, higher-tier than raw Guardian checks.
 
+**`WindowsHostUnreachable` (added 2026-07-29):** `up{job="windows-node"} == 0` for `5m`, severity `warning`. Added after `DESKTOP-0AJUKU3` crashed and this had zero alerting coverage — Guardian's priority watchdog had already flagged it (Chapter 4.11) but nothing pushed it to Slack, so it was only found by asking. The 5-minute window is deliberate: a normal reboot's downtime (observed the same morning: ~45 seconds) should self-resolve without paging, but a second, unresolved outage 19 minutes later should not go unnoticed the way it did. This rule only detects unreachability — it can't distinguish a real OS crash from a network/firewall/service issue, since Guardian has no local agent on Windows hosts, only remote `windows_exporter` scraping (Chapter 4.9). For the actual cause, check the host directly: Event Viewer's System log, Event ID 41 (unexpected shutdown) or 1001 (BugCheck with stop code).
+
 ### 8.2 Alertmanager
 
 v0.33.1, manual tarball install (same pattern as Prometheus itself), `/etc/alertmanager/alertmanager.yml`, `alertmanager.service` (enabled). `prometheus.yml`'s `alerting.alertmanagers` points at `localhost:9093`; confirm connection via `curl localhost:9090/api/v1/alertmanagers`.
@@ -676,7 +678,7 @@ Routes to a Slack Incoming Webhook. **Real incident during setup:** a stray trai
 
 - Only Slack is wired up — no email/PagerDuty-style escalation. Deliberately deferred (user chose not to add another external account yet).
 - No alert-fatigue tuning yet — grouping/inhibition rules in `alertmanager.yml` are still the initial pass.
-- Alerting only covers the three ML watchdogs' sustained-anomaly case — Guardian Health/Security/AI-risk scores, and the newer Windows/Logs watchdogs, don't yet have their own Prometheus alerting rules (they do feed into the Priority watchdog's triage score, Chapter 4.11, but that's a dashboard signal, not a push notification).
+- Alerting covers the three ML watchdogs' sustained-anomaly case and, as of 2026-07-29, Windows host unreachability. Guardian Health/Security/AI-risk scores and the Logs watchdog still don't have their own Prometheus alerting rules (they do feed into the Priority watchdog's triage score, Chapter 4.11, but that's a dashboard signal, not a push notification).
 
 ### 8.4 Incident Response Reference
 
@@ -746,6 +748,7 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **8016/8017/8018 had no UFW coverage → fixed same-day.** Found while writing this revision, closed by adding the same ALLOW-127.0.0.1 + DENY-Anywhere pattern already used for 8011-8014.
 - **2 empty "New dashboard" stubs → deleted.** Found during the dashboard-inventory audit, removed via the Grafana API same day.
 - **`trace_suspect.sh`'s unrestricted wildcard sudo argument → fixed (2026-07-29).** Confirmed exploitable (not just theoretical) as a root-level eBPF trace of PID 1, unrelated to any Guardian detection. Closed with a ticket mechanism — see Chapter 5.2 for full detail. Live watchdog services still need a restart to load the fix (Chapter 1.7).
+- **No alert for Windows host unreachability → `WindowsHostUnreachable` rule added (2026-07-29).** Found the gap directly: `DESKTOP-0AJUKU3` crashed and Guardian's priority watchdog flagged it, but nothing pushed it to Slack — see Chapter 8.1.
 
 ### 10.2 Still Open
 
@@ -754,7 +757,7 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **No secrets manager** — config lives in plaintext systemd env drop-ins.
 - **No staging environment** — this box is prod, dev, and workstation simultaneously; every change is tested live.
 - **No documented rollback procedure** beyond `git checkout --` for a single file; `Restart=always` is a crash-loop safety net, not an operations strategy.
-- **Alerting breadth** — only the 3 ML watchdogs have Prometheus alert rules; only Slack is wired up (Chapter 8.3).
+- **Alerting breadth** — Guardian Health/Security/AI-risk and the Logs watchdog still have no Prometheus alert rules of their own; only Slack is wired up (Chapter 8.3).
 - **Documentation-vs-reality drift, found via a full audit this revision (2026-07-27):** three real implementations existed with zero documentation anywhere (a second Grafana dashboard, `grafana_annotate.py`, the `talks/` build tooling — all now fixed in this manual), a dashboard-naming collision in this manual's own earlier draft (now disambiguated, Chapter 3.3), `README.md`/`Futurework.md` were describing an April-or-earlier snapshot against a ~30-script repo (retired/rewritten, see below), and Guardrails turned out to have a real v1 that VISION.md and this manual both incorrectly described as "not yet formalized" (now corrected). Worth periodically re-running this kind of audit (grep every script against every doc, check live Grafana/Prometheus state against what docs claim) rather than assuming docs stay accurate as the system grows.
 
 ### 10.3 Proposed, Not Yet Scoped: Phase 7 — Govern the Agent, Not Just the Output
