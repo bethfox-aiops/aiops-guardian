@@ -36,7 +36,8 @@ In production, everything runs as systemd services (`User=beth`,
 | `aiops-watchdog-priority` | `aiops-watchdog-priority.py` | 8018 |
 
 Restarting any of these needs `sudo` and is **not** in this user's passwordless
-sudoers list (only `ufw`, `trace_suspect.sh`, and restarting
+sudoers list (only `ufw_guard.sh` — a wrapper around `ufw`, not `ufw` directly,
+see "Other notes" below — `trace_suspect.sh`, and restarting
 `prometheus`/`loki` are passwordless) — restarts have to be run interactively
 by the user, not scripted.
 
@@ -204,6 +205,19 @@ before assuming the row count is sane.
 
 ## Other notes
 
+- **`ufw_guard.sh` (added 2026-07-30):** the passwordless sudoers entry for
+  `ufw` used to point at the raw `/usr/sbin/ufw` binary with no argument
+  restriction at all (`(ALL) NOPASSWD: /usr/sbin/ufw`) — anything running as
+  `beth`, including an agent session, could passwordlessly run `ufw disable`
+  or `ufw --force reset`, removing the DENY rules several watchdog ports rely
+  on as their only defense. The sudoers entry now points at
+  `ufw_guard.sh` instead, which blocks `disable`/`reset`/`default` and passes
+  everything else (status, allow, deny, delete) straight through to real
+  `ufw` — same governance pattern as `trace_suspect.sh`'s ticket mechanism
+  (sudoers scopes which script runs as root, the script scopes what it
+  actually does). `guardian_common.py`'s `_get_ufw_status_cached()` calls the
+  wrapper now, not raw `ufw` — if you ever see `sudo ufw ...` in new code,
+  route it through `ufw_guard.sh` instead or it'll fail passwordlessly.
 - `full_system_report_*.md` / `system_report_*.md` are point-in-time snapshot
   reports and are gitignored — don't expect them to be tracked or complete.
 - `disk_watchdog.py` runs via `disk_watchdog.timer` (every 15 min, oneshot),

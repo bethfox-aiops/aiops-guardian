@@ -201,11 +201,33 @@ Concrete, currently-missing pieces, in rough priority order:
    calling `sudo`, and `trace_suspect.sh` refuses to run unless a fresh,
    matching ticket exists — verified in all four directions (no ticket,
    wrong-PID ticket, stale ticket, valid ticket). Full detail in
-   `OPERATIONS_MANUAL.md` Chapter 5.2. Concretely, going forward: audit every
-   other script/wrapper an AI agent is expected to invoke (not just the
-   agent's own sudo profile) for the same class of gap — over-broad
-   arguments, unscoped file access, missing input validation — as an ongoing
-   governance checklist, not a one-time fix.
+   `OPERATIONS_MANUAL.md` Chapter 5.2.
+
+   **Second concrete instance found and closed (2026-07-30), from doing
+   exactly that audit:** the other passwordless sudoers entries were
+   `systemctl restart prometheus.service`/`loki.service` (fully literal, no
+   wildcard, nothing to fix) and `ufw` — which turned out to have **no
+   subcommand restriction at all** (`(ALL) NOPASSWD: /usr/sbin/ufw`).
+   Confirmed as a real, already-used capability rather than theoretical: this
+   session had already used the unrestricted entry twice to add/remove real
+   firewall rules, meaning `ufw disable` or `ufw --force reset` could equally
+   have been run passwordlessly by anything running as `beth`, removing the
+   DENY rules several watchdog ports rely on as their only external defense
+   (`OPERATIONS_MANUAL.md` Chapter 3.9/7.3). Narrowing to read-only `status`
+   was rejected for the same reason PID-ownership restriction was rejected
+   for `trace_suspect.sh` — it would break a real, already-established
+   workflow. Fixed with `ufw_guard.sh`, a wrapper that blocks
+   `disable`/`reset`/`default` (the only subcommands with zero legitimate use
+   here) and passes everything else through; verified in all three block
+   cases plus the `status` passthrough, both standalone and through real
+   `sudo`. Full detail, including a live-service consequence hit the same
+   day, in `OPERATIONS_MANUAL.md` Chapter 5.2.
+
+   Concretely, going forward: continue auditing every new script/wrapper an
+   AI agent is expected to invoke (not just the agent's own sudo profile) for
+   the same class of gap — over-broad arguments, unscoped file access,
+   missing input validation — as an ongoing governance checklist, not a
+   one-time fix.
 3. **Map `behavioral_policy.py`'s `POLICIES` to a real framework** (ISO 42001
    and/or the NIST AI RMF are the two named in the framing that prompted this)
    instead of the current ad-hoc dict. This is what turns "we check some

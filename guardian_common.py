@@ -13,6 +13,7 @@ cached).
 """
 
 import hashlib
+import os
 import subprocess
 import time
 
@@ -80,13 +81,22 @@ def _run(cmd, timeout=15) -> str:
 
 _ufw_status_cache = {"ts": 0.0, "out": ""}
 
+_UFW_GUARD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ufw_guard.sh")
+
+
 def _get_ufw_status_cached(max_age: float = 25.0) -> str:
     """`sudo ufw status` output, cached briefly so the once-per-cycle callers
-    (get_ufw_enabled, _ufw_denies_port_externally x4 ports) share one sudo call."""
+    (get_ufw_enabled, _ufw_denies_port_externally x4 ports) share one sudo call.
+
+    Goes through ufw_guard.sh rather than calling `sudo ufw` directly --
+    the passwordless sudoers entry now points at the wrapper, not the raw
+    ufw binary (see ufw_guard.sh's own comment for why: unrestricted
+    passwordless ufw access could disable/reset the firewall that several
+    watchdog ports rely on as their only defense)."""
     now = time.time()
     if now - _ufw_status_cache["ts"] > max_age:
         try:
-            r = subprocess.run(["sudo", "ufw", "status"],
+            r = subprocess.run(["sudo", _UFW_GUARD, "status"],
                                capture_output=True, text=True, check=False, timeout=5)
             _ufw_status_cache["out"] = r.stdout
         except Exception:
