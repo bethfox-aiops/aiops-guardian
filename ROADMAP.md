@@ -224,9 +224,22 @@ Concrete, currently-missing pieces, in rough priority order:
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed
    or append-only — a privileged actor (including an AI agent with broad
-   sudo) could alter it after the fact. Worth exploring something as simple
-   as hash-chaining `releases/*.json` records (each record includes the hash
-   of the previous one) before reaching for anything heavier.
+   sudo) could alter it after the fact.
+
+   **First slice closed (2026-07-30):** `release_record.py`'s `releases/*.json`
+   ledger is now hash-chained — each record carries a `chain` block
+   (`sequence`, `previous_hash`, `record_hash`); `previous_hash` points at the
+   prior record's `record_hash`, so editing any past record after the fact
+   changes a hash that every later record's chain depends on. `verify_chain.py`
+   walks the whole ledger and confirms it's unbroken; `test_release_chain.py`
+   proves this concretely (`test_edited_record_breaks_chain`), not just in
+   theory. The two real pre-existing release records were backfilled into the
+   chain (order preserved via their original timestamps) rather than starting
+   the ledger mid-history. **Scope note:** this only covers the release
+   ledger — systemd journal entries and OTel/Tempo traces are still plain
+   observable logging, not hash-chained or signed. Extending the same pattern
+   to those (or reaching for something heavier, e.g. actual signing) is the
+   remaining part of this item if it's worth pursuing further.
 
 This phase is deliberately not scoped further than that yet — it's a real gap
 worth tracking, not a fully-designed plan. Revisit and flesh out phase-by-phase
