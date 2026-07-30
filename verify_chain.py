@@ -35,11 +35,14 @@ def _load_chain():
     return records
 
 
-def verify_chain():
+def check_chain():
+    """Programmatic core, no printing -- re-verifies every record's hash and
+    link. Returns (ok, problems, records), where records is the same
+    (path, record) list callers like release_report.py need to locate a
+    specific release's position in the ledger."""
     records = _load_chain()
     if not records:
-        print("[INFO] No chained release records found -- nothing to verify.")
-        return True
+        return True, [], records
 
     expected_previous_hash = release_record.GENESIS_HASH
     problems = []
@@ -67,7 +70,17 @@ def verify_chain():
 
         expected_previous_hash = chain["record_hash"]
 
-    if problems:
+    return len(problems) == 0, problems, records
+
+
+def verify_chain():
+    ok, problems, records = check_chain()
+
+    if not records:
+        print("[INFO] No chained release records found -- nothing to verify.")
+        return True
+
+    if not ok:
         print(f"[FAIL] Chain verification found {len(problems)} problem(s):")
         for p in problems:
             print(f"  - {p}")

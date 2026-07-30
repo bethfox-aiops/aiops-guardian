@@ -13,3 +13,4 @@ old/
 full_system_report_*.md
 system_report_*.md
 report_state.json
+reports/
