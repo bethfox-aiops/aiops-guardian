@@ -493,6 +493,8 @@ Now covered by `test_behavioral_policy.py` (Chapter 4.15).
 
 `releases/` is treated as a permanent, growing git-tracked ledger — expect one JSON file per future real release.
 
+**`release_report.py` (added 2026-07-30):** renders one release record as a self-contained Markdown document for a non-technical reader (an auditor, a lawyer, a hiring manager) — objective, build provenance, what ran, pass/fail verification, and a "chain of custody" section stating whether the ledger's hash chain (below) re-verified intact at report-generation time. Run as `python3 release_report.py <release_id>`; writes to `reports/<release_id>_report.md` (gitignored, regenerated from tracked `releases/*.json` data, not itself a source of truth) and prints to stdout. For a document to actually hand someone, convert with `pandoc <file>.md -o <file>.pdf` (needs a PDF engine like `texlive-latex-base` installed) or `pandoc -s <file>.md -o <file>.html` and print-to-PDF from a browser (no extra install).
+
 ### 5.7 Summary
 
 All 6 originally-scoped roadmap phases have concrete, verified implementations, each proven against real system behavior rather than synthetic tests alone. A proposed **Phase 7** ("govern the agent, not just the output") exists only as a scoped problem statement so far — see Chapter 10.
@@ -766,6 +768,7 @@ This chapter did not exist in the April manual in this form — it consolidates 
 - **`trace_suspect.sh`'s unrestricted wildcard sudo argument → fixed (2026-07-29).** Confirmed exploitable (not just theoretical) as a root-level eBPF trace of PID 1, unrelated to any Guardian detection. Closed with a ticket mechanism — see Chapter 5.2 for full detail. Live watchdog services still need a restart to load the fix (Chapter 1.7).
 - **No alert for Windows host unreachability → `WindowsHostUnreachable` rule added (2026-07-29).** Found the gap directly: `DESKTOP-0AJUKU3` crashed and Guardian's priority watchdog flagged it, but nothing pushed it to Slack — see Chapter 8.1.
 - **`releases/*.json` was observable but not tamper-evident → hash-chained (2026-07-30).** Phase 7 item 4. Each release record now carries a `chain` block linking it to the previous record's hash (`release_record.py`), verified by `verify_chain.py` and proven against a real tamper scenario in `test_release_chain.py`. The two pre-existing real release records were backfilled into the chain. Scope note: only the release ledger is covered so far — journal/OTel/Tempo logging is still unsigned, plain observability. See Chapter 10.3 and `ROADMAP.md`'s Phase 7 item 4.
+- **No human-readable output for a release record → `release_report.py` (2026-07-30).** The chain proves a record hasn't been altered, but a raw JSON file plus a terminal command still wasn't something to hand a non-technical reader. `release_report.py` renders one release as a Markdown evidence document (objective, build provenance, runtime verification result, chain-of-custody statement) — see Chapter 5.6.
 
 ### 10.2 Still Open
 

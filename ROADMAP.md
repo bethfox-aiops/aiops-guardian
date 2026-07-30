@@ -241,6 +241,14 @@ Concrete, currently-missing pieces, in rough priority order:
    to those (or reaching for something heavier, e.g. actual signing) is the
    remaining part of this item if it's worth pursuing further.
 
+   **Follow-on (2026-07-30):** `release_report.py` renders a single release
+   record as a self-contained Markdown evidence document — objective, build
+   provenance, runtime verification result, and a chain-of-custody section
+   stating whether the ledger re-verified intact at report-generation time —
+   so the chain's proof is something to actually hand a non-technical reader
+   (auditor, lawyer, hiring manager), not just something `verify_chain.py`
+   prints to a terminal.
+
 This phase is deliberately not scoped further than that yet — it's a real gap
 worth tracking, not a fully-designed plan. Revisit and flesh out phase-by-phase
 like the rest of this roadmap once there's appetite to build it.
