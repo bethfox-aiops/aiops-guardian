@@ -12,6 +12,8 @@ what changed in observed runtime behavior as a result" -- with evidence,
 not inference.
 """
 
+import glob
+import hashlib
 import json
 import os
 import subprocess
@@ -19,6 +21,38 @@ import datetime
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 RELEASES_DIR = os.path.join(REPO_DIR, "releases")
+
+# Sentinel previous_hash for the first record in the chain -- there is no
+# real prior record to point at, so this is never a value a genuine
+# sha256 hexdigest could collide with (all zeros, right length).
+GENESIS_HASH = "0" * 64
+
+
+def _canonical(obj):
+    """Deterministic JSON encoding -- stable key order, no incidental
+    whitespace -- so the same record content always hashes the same way."""
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+def _hash_record_content(record_content):
+    return hashlib.sha256(_canonical(record_content).encode()).hexdigest()
+
+
+def _chain_tip():
+    """Scan existing release records for the current end of the chain.
+    Returns (next_sequence, previous_hash). The chain order lives entirely
+    in each record's own "chain" field -- no separate ledger file to keep
+    in sync or go stale."""
+    tip_sequence = -1
+    tip_hash = GENESIS_HASH
+    for path in glob.glob(os.path.join(RELEASES_DIR, "*.json")):
+        with open(path) as f:
+            existing = json.load(f)
+        chain = existing.get("chain")
+        if chain and chain["sequence"] > tip_sequence:
+            tip_sequence = chain["sequence"]
+            tip_hash = chain["record_hash"]
+    return tip_sequence + 1, tip_hash
 
 
 def _git(*args):
@@ -63,6 +97,13 @@ def record_release(*, release_id, objective, agent, approval, workflow, trace_id
     }
 
     os.makedirs(RELEASES_DIR, exist_ok=True)
+    sequence, previous_hash = _chain_tip()
+    record["chain"] = {
+        "sequence": sequence,
+        "previous_hash": previous_hash,
+        "record_hash": _hash_record_content(record),
+    }
+
     path = os.path.join(RELEASES_DIR, f"{release_id}.json")
     with open(path, "w") as f:
         json.dump(record, f, indent=2)

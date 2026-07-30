@@ -38,5 +38,10 @@
   "runtime_behavioral_attestation": {
     "passed": true,
     "violations": []
+  },
+  "chain": {
+    "sequence": 0,
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "record_hash": "7ad0860cfbd8aa97bc530babeec4cc622b08527b2cb45bc3b11450e7d47623bc"
   }
 }

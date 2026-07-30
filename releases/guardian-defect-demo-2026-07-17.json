@@ -40,5 +40,10 @@
     "violations": [
       "row_count 20 below policy minimum 100"
     ]
+  },
+  "chain": {
+    "sequence": 1,
+    "previous_hash": "7ad0860cfbd8aa97bc530babeec4cc622b08527b2cb45bc3b11450e7d47623bc",
+    "record_hash": "dd19f722babdc2d4a26dbf0ff34b9ae72a673c28cab42e3824c828241966964f"
   }
 }
