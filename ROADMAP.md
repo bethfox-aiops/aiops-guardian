@@ -242,6 +242,50 @@ Concrete, currently-missing pieces, in rough priority order:
    Guardrails component (one action-classification/logging model, one set of
    Prometheus metrics, ideally framework-mapped per this item) is the concrete
    next step here, not building Guardrails from scratch.
+
+   **Decision (2026-07-31): NIST AI RMF chosen over ISO/IEC 42001 as the
+   framework to map against.** Reasoning: NIST AI RMF is free and complete
+   (ISO 42001's actual text is paywalled), it's a voluntary self-assessment
+   framework with no certification expectation attached (ISO 42001 is a
+   certifiable management-system standard — referencing it without being
+   certified invites an awkward "so are you certified?" question that has
+   no good answer for a solo project), its MEASURE function maps naturally
+   onto what Guardian's watchdogs/`behavioral_policy.py` already do, and
+   it's the framework actually getting referenced in the AI-safety/security
+   community right now. ISO 42001 is still worth a passing mention as a
+   secondary nod, not the primary mapping target.
+
+   **Stage 1 (grounding) done, 2026-07-31:** `NIST_AI_RMF_REFERENCE.md`
+   captures the actual AI RMF 1.0 Core verbatim (source:
+   `NIST.AI.100-1.pdf`, Jan 2023) — all four functions (Govern, Map,
+   Measure, Manage), every category and subcategory, plus the seven named
+   trustworthiness characteristics. This is reference material only, no
+   claims yet about Guardian's own coverage.
+
+   **Stage 2 (gap analysis) done, 2026-07-31:** `NIST_AI_RMF_GAP_ANALYSIS.md`
+   — every one of the 72 subcategories across all four functions assessed
+   against real evidence (specific files, metrics, services, documented
+   incidents), each tagged Satisfied/Partial/Planned/Gap/Not-applicable.
+   Headline results: 22 Satisfied, 25 Partial, 0 Planned, 7 Gap, 18 Not
+   applicable. GOVERN is honestly the weak function (2/19 Satisfied — most
+   of it assumes organizational structure a solo project doesn't have).
+   MEASURE has the strongest, most provable evidence (the real KNN
+   defect-catch, the hash-chained ledger). MANAGE came out stronger than
+   expected (`aiops-watchdog-priority.py`'s tier/novelty scoring covers
+   more of it than assumed going in — zero flat gaps in that function).
+   MAP is the real, actionable next opportunity — mostly writing down
+   context/cost/third-party-risk information that's already informally
+   true, not new infrastructure. Adopted a traceability-matrix structure
+   (subcategory → Guardian capability → evidence → status) plus a
+   three-layer executive/architect/engineer view, both suggested via a
+   ChatGPT consultation and verified against the real framework text and
+   real code before being trusted — a couple of ChatGPT's example claims
+   (an overstated "Govern is meaningfully supported" read, two invented
+   capability names) didn't hold up and were corrected rather than
+   carried through. **Next stage, not started:** decide whether any of
+   the 7 flat Gaps are worth actually closing, and whether to add
+   framework-tag metadata to `behavioral_policy.py` itself per the
+   original Phase 7 item 3 idea.
 4. **Genuinely tamper-evident logging**, not just observable logging. Today's
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed
