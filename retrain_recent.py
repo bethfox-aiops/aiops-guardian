@@ -42,7 +42,7 @@ tracer = get_tracer("aiops-retrain-autoencoder")
 MODEL_FILE  = "autoencoder_model.keras"
 SCALER_FILE = "autoencoder_scaler.pkl"
 THRESHOLD_FILE = "autoencoder_threshold.txt"
-RECENT_ROWS = 100000
+RECENT_ROWS = 2000
 
 if __name__ == "__main__":
     run_start_time = time.time()
@@ -89,9 +89,9 @@ if __name__ == "__main__":
 
             val_recon = model.predict(X_val, verbose=0)
             val_mse = np.mean(np.square(X_val - val_recon), axis=1)
-            threshold = float(np.percentile(val_mse, 95))
+            threshold = float(np.percentile(val_mse, 99))
 
-            print(f"[INFO] Val MSE — mean: {val_mse.mean():.4f}, 95th pct (threshold): {threshold:.6f}")
+            print(f"[INFO] Val MSE — mean: {val_mse.mean():.4f}, 99th pct (threshold): {threshold:.6f}")
             span.set_attribute("training_rows", split)
             span.set_attribute("validation_rows", len(X_val))
             span.set_attribute("val_mse_mean", float(val_mse.mean()))
