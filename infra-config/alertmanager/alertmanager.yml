@@ -1,0 +1,22 @@
+route:
+  receiver: slack-aiops
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: slack-aiops
+    slack_configs:
+      # A basic Incoming Webhook already posts to whatever channel it was
+      # created for -- no `channel:` override needed unless you set one up
+      # with different scopes.
+      - api_url_file: /etc/alertmanager/slack_webhook_url
+        send_resolved: true
+        title: '{{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: ['alertname', 'job']
