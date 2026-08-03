@@ -58,6 +58,7 @@ g_dns_conns         = Gauge("aiops_security_dns_connections",        "Active con
 # ─── File Integrity ──────────────────────────────────────────────────────────
 g_passwd_changed  = Gauge("aiops_security_passwd_changed",         "1 if /etc/passwd modified since last check")
 g_sudoers_changed = Gauge("aiops_security_sudoers_changed",        "1 if /etc/sudoers modified since last check")
+g_sudoers_d_changed = Gauge("aiops_security_sudoers_d_changed",    "1 if any file in /etc/sudoers.d/ was added, removed, or modified since last check")
 g_shadow_changed  = Gauge("aiops_security_shadow_changed",         "1 if /etc/shadow modified since last check")
 g_world_writable  = Gauge("aiops_security_world_writable_files",   "World-writable files in sensitive system paths")
 g_tmp_file_count  = Gauge("aiops_security_tmp_file_count",         "Number of files in /tmp")
@@ -319,6 +320,29 @@ def check_critical_file_mtimes() -> tuple:
             _prev[key] = mtime
             results.append(changed)
     return tuple(results)
+
+
+def check_sudoers_d_changed() -> int:
+    """check_critical_file_mtimes() only watches /etc/sudoers itself, but on
+    this host every rule that actually matters (trace_suspect.sh,
+    ufw_guard.sh, the prometheus/loki restart entries) lives in a file under
+    /etc/sudoers.d/ via #includedir - none of those files' mtimes would move
+    the one path that function checks. getmtime() only needs search
+    permission on the directory, not read permission on the 0440 root-owned
+    files themselves, so this works unprivileged."""
+    try:
+        current = {
+            name: os.path.getmtime(os.path.join("/etc/sudoers.d", name))
+            for name in os.listdir("/etc/sudoers.d")
+        }
+    except Exception:
+        current = {}
+    if _prev["sudoers_d_mtimes"] is None:
+        _prev["sudoers_d_mtimes"] = current
+        return 0
+    changed = 1 if current != _prev["sudoers_d_mtimes"] else 0
+    _prev["sudoers_d_mtimes"] = current
+    return changed
 
 
 def get_world_writable_count() -> int:
@@ -615,9 +639,11 @@ def compute_security(iteration: int):
 
     # ── File Integrity ──────────────────────────────────────────────────────
     passwd_c, sudoers_c, shadow_c = check_critical_file_mtimes()
+    sudoers_d_c = check_sudoers_d_changed()
     g_passwd_changed.set(passwd_c)
     g_sudoers_changed.set(sudoers_c)
     g_shadow_changed.set(shadow_c)
+    g_sudoers_d_changed.set(sudoers_d_c)
 
     tmp_count, tmp_mb = get_tmp_stats()
     g_tmp_file_count.set(tmp_count)
@@ -686,6 +712,9 @@ def compute_security(iteration: int):
     if sudoers_c:
         ext_deduction += 25
         print("[SEC-ALERT] /etc/sudoers modified!")
+    if sudoers_d_c:
+        ext_deduction += 25
+        print("[SEC-ALERT] A file in /etc/sudoers.d/ was added, removed, or modified!")
     if shadow_c:
         ext_deduction += 20
         print("[SEC-ALERT] /etc/shadow modified!")

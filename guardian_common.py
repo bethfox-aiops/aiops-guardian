@@ -39,6 +39,7 @@ _prev = {
     "passwd_mtime": None,
     "sudoers_mtime": None,
     "shadow_mtime": None,
+    "sudoers_d_mtimes": None,
     "kernel_module_count": None,
     "model_hashes": {},
     "world_writable": 0,
