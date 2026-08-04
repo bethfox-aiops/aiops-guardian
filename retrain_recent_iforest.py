@@ -26,6 +26,7 @@ from otel_setup import get_tracer
 from retrain_common import (
     DATA_FILE,
     FEATURES,
+    archive_current_models,
     init_gpu_handle,
     monitor_self,
     report_self_attribution,
@@ -38,7 +39,7 @@ tracer = get_tracer("aiops-retrain-iforest")
 
 MODEL_FILE  = "iforest_model.pkl"
 SCALER_FILE = "iforest_scaler.pkl"
-RECENT_ROWS = 100000
+RECENT_ROWS = 2000
 
 if __name__ == "__main__":
     run_start_time = time.time()
@@ -74,6 +75,11 @@ if __name__ == "__main__":
             span.set_attribute("anomalies_in_training_data", num_anomalies)
 
         with tracer.start_as_current_span("save_model") as span:
+            archive_dir = archive_current_models([MODEL_FILE, SCALER_FILE], "iforest")
+            if archive_dir:
+                print(f"[INFO] Archived previous model to {archive_dir}")
+                span.set_attribute("archived_to", archive_dir)
+
             joblib.dump(model, MODEL_FILE)
             joblib.dump(scaler, SCALER_FILE)
             print(f"[INFO] Saved {MODEL_FILE}, {SCALER_FILE}")

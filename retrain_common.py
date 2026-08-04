@@ -12,8 +12,11 @@ validation-split threshold derivation in particular).
 """
 
 import os
+import shutil
 import threading
+import time
 from contextlib import contextmanager
+from datetime import datetime
 
 import psutil
 
@@ -22,6 +25,27 @@ from gpu_attribution import poll_max_gpu_usage
 from behavioral_policy import verify
 
 DATA_FILE = "aiops_data/metrics.csv"
+
+# NIST AI RMF MEASURE 2.12 (energy/environmental cost): this host's actual
+# Intel RAPL energy counters (/sys/class/powercap/intel-rapl:0/energy_uj)
+# are root-only (Platypus side-channel mitigation, CVE-2020-8694/8695) -
+# not worth adding new sudo scope just to read them, so this is a clearly-
+# labeled ESTIMATE (linear interpolation between Intel's published base and
+# turbo power for this CPU), not a real measurement. Source: Intel ARK
+# product page for the i9-13950HX, base power 55W / max turbo power 157W,
+# checked 2026-08-04 - update these if the host CPU ever changes.
+_CPU_BASE_POWER_W = 55
+_CPU_TURBO_POWER_W = 157
+_CPU_LOGICAL_CORES = os.cpu_count() or 1
+
+
+def estimate_energy_wh(cpu_percent, duration_s):
+    """cpu_percent is psutil's convention (100% = one full core, so up to
+    N*100% on an N-core box) - normalize to a 0-1 fraction of total logical
+    capacity before interpolating between base and turbo power."""
+    utilization = min(cpu_percent / (100 * _CPU_LOGICAL_CORES), 1.0)
+    estimated_watts = _CPU_BASE_POWER_W + (_CPU_TURBO_POWER_W - _CPU_BASE_POWER_W) * utilization
+    return estimated_watts * duration_s / 3600
 
 FEATURES = [
     "disk", "disk_free_gb", "disk_fill_rate_mb_min", "inode_pct",
@@ -57,6 +81,7 @@ def monitor_self(gpu_handle):
     self_pid = os.getpid()
     self_proc = psutil.Process(self_pid)
     self_proc.cpu_percent(interval=None)  # prime
+    start_time = time.time()
 
     ebpf_result = {}
     trace_thread = threading.Thread(
@@ -84,6 +109,25 @@ def monitor_self(gpu_handle):
         stats["mem_percent"] = self_proc.memory_percent()
         stats["gpu_max_mib"] = gpu_result.get("max_mib", 0.0)
         stats["evidence"] = ebpf_result.get("evidence")
+        stats["duration_s"] = time.time() - start_time
+
+
+def archive_current_models(model_files, archive_prefix):
+    """NIST AI RMF GOVERN 1.7 (model decommissioning/phase-out): before a
+    retrain overwrites the live model files, snapshot whatever's currently
+    live into old/<prefix>_<date>/. Turns the one-off manual backup done by
+    hand during the 2026-07-17 defect-demo into an automatic, repeatable
+    practice. Cheap - these files are tens of KB - so no retention/pruning
+    logic; every retrain gets its own dated snapshot. Returns the archive
+    dir, or None if there was nothing live yet to archive (first-ever run)."""
+    existing = [f for f in model_files if os.path.exists(f)]
+    if not existing:
+        return None
+    dest_dir = os.path.join("old", f"{archive_prefix}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}")
+    os.makedirs(dest_dir, exist_ok=True)
+    for f in existing:
+        shutil.copy2(f, dest_dir)
+    return dest_dir
 
 
 def report_self_attribution(span, stats):
@@ -93,6 +137,12 @@ def report_self_attribution(span, stats):
     span.set_attribute("process.cpu_percent", stats["cpu_percent"])
     span.set_attribute("process.mem_percent", stats["mem_percent"])
     span.set_attribute("gpu.used_memory_mib", stats["gpu_max_mib"])
+    span.set_attribute("training.duration_s", stats["duration_s"])
+    span.set_attribute(
+        "energy.estimated_wh",
+        estimate_energy_wh(stats["cpu_percent"], stats["duration_s"]),
+    )
+    span.set_attribute("energy.estimation_method", "cpu_percent-interpolated, not RAPL-measured")
 
     evidence = stats["evidence"]
     if evidence:

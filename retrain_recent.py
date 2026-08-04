@@ -29,6 +29,7 @@ from otel_setup import get_tracer
 from retrain_common import (
     DATA_FILE,
     FEATURES,
+    archive_current_models,
     init_gpu_handle,
     monitor_self,
     report_self_attribution,
@@ -98,6 +99,11 @@ if __name__ == "__main__":
             span.set_attribute("threshold", threshold)
 
         with tracer.start_as_current_span("save_model") as span:
+            archive_dir = archive_current_models([MODEL_FILE, SCALER_FILE, THRESHOLD_FILE], "autoencoder")
+            if archive_dir:
+                print(f"[INFO] Archived previous model to {archive_dir}")
+                span.set_attribute("archived_to", archive_dir)
+
             model.save(MODEL_FILE)
             joblib.dump(scaler, SCALER_FILE)
             with open(THRESHOLD_FILE, "w") as f:
