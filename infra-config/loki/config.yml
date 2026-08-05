@@ -3,6 +3,15 @@ auth_enabled: false
 server:
   http_listen_port: 3100
   grpc_listen_port: 9095
+  # Default log_level (info) logs every routine internal housekeeping
+  # cycle - index/table handover, periodic metrics, owned-streams
+  # recalculation - at high frequency. Found 2026-08-05: loki alone
+  # accounted for ~13,800 of ~16,000 total system log lines in a 40-minute
+  # window, growing as more daily-sharded index tables accumulate over
+  # this instance's lifetime (running since 2026-03-01). warn still
+  # surfaces real problems (e.g. the ring-unhealthy errors seen during
+  # suspend/resume) without the routine noise.
+  log_level: warn
 
 # Single-node Loki configuration — no clustering
 common:
