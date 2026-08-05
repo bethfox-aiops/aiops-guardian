@@ -48,7 +48,9 @@ POLICIES = {
         "max_gpu_mib": 0,            # KNN is CPU-only; any GPU use is unexpected
         "max_network_connects": 0,   # a retrain run should not open outbound connections
         "min_rows": 100,             # sanity floor -- something is very wrong below this
-        "max_rows": 5000,            # RECENT_ROWS is 2000; flag if wildly different
+        "max_rows": 5000,            # generous ceiling above retrain_common.py's shared
+                                      # RECENT_ROWS -- catches a wildly wrong window, not
+                                      # meant to track the exact current value
     },
     "retrain_iforest": {
         "expected_files": {"iforest_model.pkl", "iforest_scaler.pkl"},
@@ -62,7 +64,9 @@ POLICIES = {
         "max_gpu_mib": None,         # no cap -- GPU use is expected/fine here if CUDA ever gets fixed
         "max_network_connects": 0,
         "min_rows": 500,
-        "max_rows": 150000,          # RECENT_ROWS is 100000
+        "max_rows": 150000,          # deliberately generous, not tied to
+                                      # retrain_common.py's RECENT_ROWS -- same
+                                      # purpose as the other two policies' ceiling
     },
 }
 

@@ -59,6 +59,14 @@ FEATURES = [
     "gpu_util", "gpu_mem_mib", "gpu_temp_c",
 ]
 
+# Shared by all three retrain scripts (2026-08-05) - was previously a
+# separate local literal in each script, which is exactly how the
+# retrain_recent_iforest.py RECENT_ROWS=100000 bug went unnoticed: three
+# independent copies that happened to agree, with nothing to catch it when
+# one drifted. One definition now; a script would have to explicitly
+# override it to differ, not silently forget to update it.
+RECENT_ROWS = 2000
+
 
 def init_gpu_handle():
     try:

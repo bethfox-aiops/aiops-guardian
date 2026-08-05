@@ -30,6 +30,7 @@ from feature_transform import transform_bursty_features_df
 from retrain_common import (
     DATA_FILE,
     FEATURES,
+    RECENT_ROWS,
     archive_current_models,
     init_gpu_handle,
     monitor_self,
@@ -44,7 +45,6 @@ tracer = get_tracer("aiops-retrain-autoencoder")
 MODEL_FILE  = "autoencoder_model.keras"
 SCALER_FILE = "autoencoder_scaler.pkl"
 THRESHOLD_FILE = "autoencoder_threshold.txt"
-RECENT_ROWS = 2000
 
 if __name__ == "__main__":
     run_start_time = time.time()
