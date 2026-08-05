@@ -282,10 +282,34 @@ Concrete, currently-missing pieces, in rough priority order:
    real code before being trusted — a couple of ChatGPT's example claims
    (an overstated "Govern is meaningfully supported" read, two invented
    capability names) didn't hold up and were corrected rather than
-   carried through. **Next stage, not started:** decide whether any of
-   the 7 flat Gaps are worth actually closing, and whether to add
-   framework-tag metadata to `behavioral_policy.py` itself per the
-   original Phase 7 item 3 idea.
+   carried through.
+
+   **Stage 3 (gap closure) done, 2026-08-04:** all 7 flat Gaps addressed —
+   5 moved to Satisfied (a risk-tolerance statement, automated model
+   archiving in `retrain_common.py` validated same-day by catching a real
+   latent `RECENT_ROWS` bug in `retrain_recent_iforest.py`, a verified
+   third-party license review), 2 moved to Partial rather than overclaimed
+   as fully closed (`GOVERN 6.2`'s model-load-failure handling is real for
+   one failure mode and honestly absent for another; `MEASURE 2.12`'s
+   retrain-energy figure is a documented CPU%-based estimate, not a true
+   RAPL measurement — `energy_uj` is root-only on this host and wasn't
+   judged worth new sudo scope for one metric). New `GOVERNANCE_POLICIES.md`
+   holds the actual written policies. Updated rollup: 27 Satisfied, 27
+   Partial, 0 Planned, 0 Gap, 18 Not applicable.
+
+   **Stage 4 (framework-tag metadata) done, 2026-08-05:** added
+   `NIST_AI_RMF_TAGS` directly to `behavioral_policy.py`, tagging the four
+   subcategories (`MEASURE 1.1`, `MAP 2.3`, `MEASURE 2.9`, `MEASURE 2.13`)
+   already citing that file in the gap analysis doc — so those claims
+   trace to real code, not just a separate write-up. Deliberately didn't
+   invent new tags beyond what was already asserted elsewhere.
+
+   **Phase 7 item 3 is now fully complete.** Remaining, if ever revisited:
+   the full 72-subcategory pass is still dated 2026-07-31 except for the 7
+   gap-closure rows — a full re-run would need to re-check the other 65
+   subcategories too, not just assume they're still accurate. ISO 42001
+   remains a secondary mention only, not mapped in the same depth as NIST,
+   by deliberate choice.
 4. **Genuinely tamper-evident logging**, not just observable logging. Today's
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed
