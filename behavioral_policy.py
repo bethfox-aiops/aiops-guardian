@@ -11,6 +11,37 @@ statistical anomaly detectors, which only ever say "this looks unusual,"
 never "this violated a stated expectation."
 """
 
+# NIST AI RMF traceability (Phase 7 item 3, closed 2026-08-05): this module
+# is cited as evidence for these subcategories in NIST_AI_RMF_GAP_ANALYSIS.md.
+# Ties each claim to the specific mechanism that earns it, so "Satisfied"
+# there traces to real code here, not just a separate write-up. If the gap
+# analysis doc's citations of this file ever change, update this to match --
+# it's meant to stay in sync, not drift into its own separate claim.
+NIST_AI_RMF_TAGS = {
+    "MEASURE 1.1": (
+        "POLICIES itself is the selection of specific, risk-relevant metrics "
+        "and bounds (expected files, GPU/network usage, row-count range) per "
+        "AI workflow -- not a generic checklist, one chosen per real risk."
+    ),
+    "MAP 2.3": (
+        "verify() plus this file's own test suite (test_behavioral_policy.py) "
+        "is the TEVV (test/evaluation/verification/validation) mechanism for "
+        "these workflows."
+    ),
+    "MEASURE 2.9": (
+        "Violation messages explain *why* a check failed, not just that it "
+        "did -- e.g. \"row_count 20 below policy minimum 100\", not a bare "
+        "pass/fail."
+    ),
+    "MEASURE 2.13": (
+        "The 2026-07-17 defect-demo (KNN's RECENT_ROWS deliberately dropped "
+        "2000->20) is the one real, proven instance of the min_rows check "
+        "catching an actual injected regression. Tagged Partial, not "
+        "Satisfied, in the gap analysis specifically because it's been "
+        "proven once, not exercised as a repeatable evaluation process."
+    ),
+}
+
 POLICIES = {
     "retrain_knn": {
         "expected_files": {"knn_model.pkl", "scaler.pkl"},

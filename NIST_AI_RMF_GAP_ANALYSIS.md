@@ -102,7 +102,7 @@ is a documented estimate, not a true hardware measurement). See
 | 1.6 | Scope/socio-technical implications considered | `VISION.md`'s litmus test | 🟡 | |
 | 2.1 | Specific ML tasks/methods defined | KNN, Isolation Forest, Autoencoder — named, documented in `CLAUDE.md`/`OPERATIONS_MANUAL.md` | ✅ | |
 | 2.2 | Known limits documented | The KNN sustained-drift pattern (4 recurrences), the chronic `ssh` false-positive in `all_check.service` | 🟡 | Real known-limits documentation; not exhaustive. |
-| 2.3 | TEVV practiced | pytest suite, Phase 5 behavioral verification, the real defect-demo | ✅ | |
+| 2.3 | TEVV practiced | pytest suite, Phase 5 behavioral verification, the real defect-demo, tagged `NIST_AI_RMF_TAGS["MAP 2.3"]` in `behavioral_policy.py` | ✅ | |
 | 3.1 | Benefits documented | `VISION.md`'s flagship use cases | ✅ | |
 | 3.2 | Costs of AI errors documented | KNN drift's alert-fatigue cost, documented in `OPERATIONS_MANUAL.md` Ch. 10 | 🟡 | |
 | 3.3 | Application scope specified | `VISION.md`'s "deliberately narrow scope" section, verbatim | ✅ | This is the clearest, most direct match in the whole document. |
@@ -119,7 +119,7 @@ is a documented estimate, not a true hardware measurement). See
 
 | # | Guardian Capability | Evidence | Status | Notes |
 |---|---|---|---|---|
-| 1.1 | Metrics selected for identified risks | `behavioral_policy.py`'s `POLICIES` dict (files/GPU/network/row-count bounds per workflow) | ✅ | |
+| 1.1 | Metrics selected for identified risks | `behavioral_policy.py`'s `POLICIES` dict (files/GPU/network/row-count bounds per workflow), tagged `NIST_AI_RMF_TAGS["MEASURE 1.1"]` in the same file | ✅ | |
 | 1.2 | Metrics reassessed | `RECENT_ROWS` inconsistency tracking, periodic doc audits | 🟡 | Happens, but reactively, not on a fixed cadence. |
 | 1.3 | N/A — solo project | — | ⚪ | No independent reviewer separate from the developer. |
 | 2.1 | Test sets/tools documented | `test_behavioral_policy.py`, `test_guardian_health.py`, `test_release_chain.py`, `test_release_report.py` | ✅ | |
@@ -130,11 +130,11 @@ is a documented estimate, not a true hardware measurement). See
 | 2.6 | Evaluated for safety; safe failure | `Restart=always`/`on-failure`, explicitly noted in `OPERATIONS_MANUAL.md` as "a crash-loop safety net, not an operations strategy" | 🟡 | Honest documented gap, not silently omitted. |
 | 2.7 | Security/resilience evaluated | This session's `trace_suspect.sh` and `ufw_guard.sh` audits — both confirmed-exploitable gaps, found and closed | ✅ | Strong, concrete evidence. |
 | 2.8 | Transparency/accountability risk addressed | `release_record.py` + hash-chaining (`verify_chain.py`) | ✅ | |
-| 2.9 | Output explained/interpreted in context | `behavioral_policy.py`'s specific violation messages (e.g., `"row_count 20 below policy minimum 100"`) | ✅ | Named explicitly in NIST's own MEASURE 2.9 language — explains *why*, not just *that*. |
+| 2.9 | Output explained/interpreted in context | `behavioral_policy.py`'s specific violation messages (e.g., `"row_count 20 below policy minimum 100"`), tagged `NIST_AI_RMF_TAGS["MEASURE 2.9"]` in the same file | ✅ | Named explicitly in NIST's own MEASURE 2.9 language — explains *why*, not just *that*. |
 | 2.10 | None | — | ⚪ | System handles no third-party personal data today; revisit if `EDGE_ARCHITECTURE.md` ever handles customer data. |
 | 2.11 | Deliberately not applicable | — | ⚪ | Guardian's models detect system-metric anomalies (CPU/disk/GPU), not decisions about people — classic demographic-fairness framing doesn't have a clear analog here. Stated explicitly rather than silently skipped. |
 | 2.12 | Estimated retrain energy cost | `retrain_common.py`'s `estimate_energy_wh()`, attached to every retrain's OTel span as `energy.estimated_wh` | 🟡 | Real measurement now exists where none did, but it's a documented estimate (CPU% interpolated against this host's published TDP), not a true RAPL measurement — `energy_uj` is root-only on this host (Platypus mitigation) and wasn't judged worth new sudo scope for one metric. |
-| 2.13 | TEVV effectiveness informally evaluated | The real defect-demo proving Phase 5 catches an actual injected regression | 🟡 | Proven once, not a repeatable evaluation process. |
+| 2.13 | TEVV effectiveness informally evaluated | The real defect-demo proving Phase 5 catches an actual injected regression, tagged `NIST_AI_RMF_TAGS["MEASURE 2.13"]` in `behavioral_policy.py` | 🟡 | Proven once, not a repeatable evaluation process. |
 | 3.1 | Existing/emergent risks tracked over time | The KNN drift pattern tracked across 4 documented recurrences (2026-07-13, -16, -17, -27) | ✅ | |
 | 3.2 | Hard-to-measure risk tracked via proxy signals | The DESKTOP-0AJUKU3 power-quality hypothesis, tracked via disk busy%/event-log proxies since a direct measurement (a UPS) doesn't exist yet | 🟡 | |
 | 3.3 | N/A — no external end users | — | ⚪ | |
