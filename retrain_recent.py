@@ -26,6 +26,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 from otel_setup import get_tracer
+from feature_transform import transform_bursty_features_df
 from retrain_common import (
     DATA_FILE,
     FEATURES,
@@ -61,8 +62,8 @@ if __name__ == "__main__":
             df = df.tail(RECENT_ROWS).reset_index(drop=True)
             print(f"[INFO] Training on most recent {len(df)} rows.")
 
-            X = df[FEATURES].copy()
-            print(f"[INFO] Feature stats:\n{X.describe().loc[['mean','std','min','max']].T.to_string()}")
+            X = transform_bursty_features_df(df[FEATURES])
+            print(f"[INFO] Feature stats (net_kbps/disk_w_kbps log1p-transformed):\n{X.describe().loc[['mean','std','min','max']].T.to_string()}")
 
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)

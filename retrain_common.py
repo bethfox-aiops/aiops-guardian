@@ -48,7 +48,13 @@ def estimate_energy_wh(cpu_percent, duration_s):
     return estimated_watts * duration_s / 3600
 
 FEATURES = [
-    "disk", "disk_free_gb", "disk_fill_rate_mb_min", "inode_pct",
+    # disk_free_gb deliberately excluded (2026-08-05): its std within any
+    # short training window is ~0.1 GB (disk usage barely moves minute to
+    # minute), so normal real-world drift by score time produces z-scores
+    # in the range of -6 to -7 on every sample -- structurally unstable for
+    # a distance-based model, and redundant with disk_fill_rate_mb_min
+    # (the rate of change), which is the actually anomaly-relevant signal.
+    "disk", "disk_fill_rate_mb_min", "inode_pct",
     "cpu", "mem", "net_kbps", "disk_w_kbps",
     "gpu_util", "gpu_mem_mib", "gpu_temp_c",
 ]

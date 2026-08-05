@@ -23,6 +23,7 @@ from prometheus_client import Gauge, start_http_server
 
 from process_attribution import get_top_processes
 from ebpf_trace import trace_suspect_process
+from feature_transform import transform_bursty_features
 from gpu_attribution import get_gpu_usage_for_pid
 
 
@@ -70,8 +71,11 @@ except ImportError:
 
 
 DATA_FEATURES = [
+    # disk_free_gb deliberately excluded (2026-08-05) - see retrain_common.py's
+    # FEATURES for why (near-zero training-window variance, structurally
+    # unstable z-scores, redundant with disk_fill_rate_mb_min). Must stay in
+    # sync with retrain_common.py's FEATURES - same order, same members.
     "disk",
-    "disk_free_gb",
     "disk_fill_rate_mb_min",
     "inode_pct",
     "cpu",
@@ -293,7 +297,6 @@ def run(config: WatchdogConfig) -> None:
 
             features = [
                 disk_pct,
-                disk_free_gb,
                 disk_fill_rate_mb_min,
                 inode_pct,
                 cpu_pct,
@@ -305,6 +308,7 @@ def run(config: WatchdogConfig) -> None:
                 gpu_temp_c,
             ]
 
+            features = transform_bursty_features(features, DATA_FEATURES)
             X = config.build_input(features, DATA_FEATURES)
             X_scaled = state["scaler"].transform(X)
 

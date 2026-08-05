@@ -23,6 +23,7 @@ from pyod.models.iforest import IForest
 from sklearn.preprocessing import StandardScaler
 
 from otel_setup import get_tracer
+from feature_transform import transform_bursty_features_df
 from retrain_common import (
     DATA_FILE,
     FEATURES,
@@ -54,7 +55,7 @@ if __name__ == "__main__":
             df = df.tail(RECENT_ROWS).reset_index(drop=True)
             print(f"[INFO] Training on most recent {len(df)} rows.")
 
-            X = df[FEATURES].values
+            X = transform_bursty_features_df(df[FEATURES]).values
 
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
