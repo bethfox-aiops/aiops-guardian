@@ -304,12 +304,25 @@ Concrete, currently-missing pieces, in rough priority order:
    trace to real code, not just a separate write-up. Deliberately didn't
    invent new tags beyond what was already asserted elsewhere.
 
-   **Phase 7 item 3 is now fully complete.** Remaining, if ever revisited:
-   the full 72-subcategory pass is still dated 2026-07-31 except for the 7
-   gap-closure rows — a full re-run would need to re-check the other 65
-   subcategories too, not just assume they're still accurate. ISO 42001
-   remains a secondary mention only, not mapped in the same depth as NIST,
-   by deliberate choice.
+   **Stage 5 (full fresh re-verification) done, 2026-08-05:** re-checked all
+   72 subcategories against current real evidence rather than assuming the
+   7/31 baseline still held. Three genuine upgrades to Satisfied (`GOVERN
+   1.4`, `GOVERN 4.1`, `MAP 4.2`), each tied to a specific new artifact
+   (mainly `GOVERNANCE_POLICIES.md`, not general drift). New rollup: 30
+   Satisfied, 22 Partial, 0 Planned, 0 Gap, 20 Not applicable — verified
+   via a script count against the actual document, not just asserted,
+   after catching a real arithmetic error in the first draft of that
+   rollup table. Also surfaced a real follow-up: this week's operational
+   incidents (reboot- and suspend/resume-triggered ML drift, the
+   autoencoder threshold recalibration) exist only in session memory,
+   never written into any repo doc — not fixed as part of this pass, worth
+   doing separately.
+
+   **Phase 7 item 3 is now fully complete, genuinely current as of
+   2026-08-05**, not just 7/31 with a patched subset. ISO 42001 remains a
+   secondary mention only, not mapped in the same depth as NIST, by
+   deliberate choice. The document should still be re-run periodically as
+   Guardian keeps changing — being current today isn't permanent.
 4. **Genuinely tamper-evident logging**, not just observable logging. Today's
    evidence trail (systemd journal, OTel/Tempo traces, `release_record.py`
    JSON files) is good observability but nothing is cryptographically signed
