@@ -420,6 +420,18 @@ def check_log_gap() -> int:
     return 0 if out.strip() else 1
 
 
+# Conffiles knowingly hand-edited on this host -- dpkg --verify always flags
+# a conffile's md5sum once you customize it, indistinguishable from tampering
+# by content alone. Excluded here rather than left to silently dock points
+# forever; if one of these paths' content integrity actually matters, watch
+# it directly (like the sudoers/passwd/shadow mtime checks) instead of via
+# this blanket dpkg check.
+KNOWN_MODIFIED_CONFFILES = {
+    "/etc/gdm3/custom.conf",
+    "/etc/sysctl.d/10-console-messages.conf",
+}
+
+
 def get_package_integrity_failures() -> int:
     out = _run(["dpkg", "--verify"], timeout=60)
     count = 0
@@ -427,6 +439,9 @@ def get_package_integrity_failures() -> int:
         if not line.strip():
             continue
         if "Permission denied" in line or "missing" in line.lower():
+            continue
+        path = line.split(maxsplit=1)[-1].lstrip("c ").strip()
+        if path in KNOWN_MODIFIED_CONFFILES:
             continue
         # Only flag actual checksum failures (??5??????) or unexpected changes
         if line.startswith("??5") or (not line.startswith("missing") and "??????" not in line):

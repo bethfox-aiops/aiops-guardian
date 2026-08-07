@@ -73,6 +73,11 @@ panels = [row("Guardian Status at a Glance", 0)]
 panels.append({
     "type": "stat",
     "title": "Guardian Status",
+    "description": (
+        "Worst of the three headline scores: min(Health, Security, AI Risk). "
+        "<50 = Critical, 50-79 = Needs Attention, >=80 = Healthy. "
+        "Check which of the three gauges is lowest to see what's driving this."
+    ),
     "gridPos": {"h": 6, "w": 6, "x": 0, "y": 1},
     "datasource": PROM_DS,
     "targets": [{
