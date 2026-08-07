@@ -45,7 +45,7 @@ from watchdog_common import WatchdogConfig
 
 MODEL_FILE = "knn_model.pkl"
 SCALER_FILE = "scaler.pkl"
-TRAINER = "train_knn_final.py"
+TRAINER = "retrain_recent_knn.py"
 
 PORT = "8011"
 

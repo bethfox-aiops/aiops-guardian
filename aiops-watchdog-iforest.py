@@ -45,7 +45,7 @@ from watchdog_common import WatchdogConfig
 
 MODEL_FILE = "iforest_model.pkl"
 SCALER_FILE = "iforest_scaler.pkl"
-TRAINER = "train_iforest_final.py"
+TRAINER = "retrain_recent_iforest.py"
 
 PORT = "8012"
 
