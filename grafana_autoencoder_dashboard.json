@@ -354,6 +354,37 @@
           }
         },
         "targets": [{ "expr": "aiops_anomaly_top_process_gpu_mem_mib", "legendFormat": "{{job}}", "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" } }]
+      },
+      {
+        "id": 17,
+        "title": "Feature Reconstruction Error (Autoencoder Evidence)",
+        "type": "table",
+        "gridPos": { "x": 8, "y": 40, "w": 16, "h": 6 },
+        "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" },
+        "description": "Per-feature squared reconstruction error (scaled space) at the last flagged autoencoder anomaly -- shows which specific metric(s) drove the score, not just the aggregate distance. Added 2026-08-07 after the NVIDIA driver outage incident, where the aggregate score alone (1.46 million) gave no hint that gpu_* features had flatlined to zero. Empty until the next anomaly fires, same as the suspect-process table above.",
+        "options": {
+          "showHeader": true,
+          "sortBy": [{ "displayName": "Reconstruction Error", "desc": true }]
+        },
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "__name__" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "instance" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "job" }, "properties": [{ "id": "custom.hidden", "value": true }] },
+            { "matcher": { "id": "byName", "options": "feature" }, "properties": [{ "id": "displayName", "value": "Feature" }] },
+            { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Reconstruction Error" }] }
+          ]
+        },
+        "targets": [
+          {
+            "expr": "aiops_anomaly_feature_reconstruction_error",
+            "format": "table",
+            "instant": true,
+            "datasource": { "type": "prometheus", "uid": "depci0ud1uscga" }
+          }
+        ]
       }
     ]
   },
