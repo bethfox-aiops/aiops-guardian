@@ -12,12 +12,16 @@ Rate-limited per PID so a long-sustained anomaly doesn't spawn a fresh
 privileged trace on every watchdog tick.
 """
 
+import json
 import os
 import subprocess
 import time
 
 TRACE_SCRIPT = "/home/beth/aiops-agents/trace_suspect.sh"
 SUDO = "/usr/bin/sudo"
+SEQUENCE_LOG = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "aiops_data", "syscall_sequences.jsonl"
+)
 COOLDOWN_SECONDS = 60
 
 # Ticket file proving *this* code path is the one requesting a trace, not an
@@ -46,7 +50,15 @@ def _write_ticket(pid):
 def trace_suspect_process(pid, timeout=5):
     """
     Run a scoped eBPF trace against `pid` and return a summary evidence dict:
-    {"counts": {"OPEN": n, "EXEC": n, "CONNECT": n, "WRITE": n}, "files_opened": [...]}
+    {"counts": {"OPEN": n, "EXEC": n, "CONNECT": n, "WRITE": n}, "files_opened": [...],
+     "sequence": ["OPEN", "WRITE", "WRITE", ...]}
+
+    `sequence` preserves syscall-type order as it actually happened during
+    the trace window (bpftrace's own printf-per-event output is already
+    ordered; this just keeps that order instead of collapsing straight to
+    counts) -- collected for future syscall-sequence modeling
+    (Agent Behavioral Attribution backlog item, see ROADMAP.md), not
+    consumed by anything yet.
 
     Returns None if skipped (still in cooldown) or if the trace failed for
     any reason (process exited, sudoers misconfigured, bpftrace error, etc).
@@ -73,6 +85,7 @@ def trace_suspect_process(pid, timeout=5):
 
     counts = {"OPEN": 0, "EXEC": 0, "CONNECT": 0, "WRITE": 0}
     files_opened = set()
+    sequence = []
     for line in result.stdout.splitlines():
         parts = line.split()
         if not parts:
@@ -80,10 +93,31 @@ def trace_suspect_process(pid, timeout=5):
         kind = parts[0]
         if kind in counts:
             counts[kind] += 1
+            sequence.append(kind)
         if kind == "OPEN" and len(parts) >= 3:
             files_opened.add(parts[2])
 
-    return {
+    result_dict = {
         "counts": counts,
         "files_opened": sorted(files_opened)[:10],
+        "sequence": sequence,
     }
+
+    # Best-effort corpus collection for future syscall-sequence modeling
+    # (Agent Behavioral Attribution backlog item, see ROADMAP.md) -- append
+    # every real trace as one JSON line. Never let a logging failure break
+    # the actual attribution feature this function exists for.
+    if sequence:
+        try:
+            os.makedirs(os.path.dirname(SEQUENCE_LOG), exist_ok=True)
+            with open(SEQUENCE_LOG, "a") as f:
+                f.write(json.dumps({
+                    "timestamp": time.time(),
+                    "pid": pid,
+                    "sequence": sequence,
+                    "counts": counts,
+                }) + "\n")
+        except OSError:
+            pass
+
+    return result_dict

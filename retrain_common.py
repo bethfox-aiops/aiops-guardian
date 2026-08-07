@@ -12,12 +12,15 @@ validation-split threshold derivation in particular).
 """
 
 import os
+import re
 import shutil
+import subprocess
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import pandas as pd
 import psutil
 
 from ebpf_trace import trace_suspect_process
@@ -66,6 +69,58 @@ FEATURES = [
 # one drifted. One definition now; a script would have to explicitly
 # override it to differ, not silently forget to update it.
 RECENT_ROWS = 2000
+
+# Confirmed twice (2026-08-06, 2026-08-07) via real retrains: a training
+# window that still contains the actual resume transient (disk catch-up
+# burst, CPU blip, GPU cold-start warming from ~27C to steady-state) gets
+# baked into the model as "normal," inflating the autoencoder's threshold
+# roughly 10-30x. Validated empirically before deploying -- 15/30/45-minute
+# buffers were tried against real data; 45 minutes was the shortest buffer
+# that consistently (not just on a lucky run) brought the threshold back
+# down close to the historical healthy baseline.
+RESUME_EXCLUSION_BUFFER_MINUTES = 45
+
+
+def exclude_resume_transients(df, buffer_minutes=RESUME_EXCLUSION_BUFFER_MINUTES):
+    """Drop rows within `buffer_minutes` after any real suspend/resume event
+    found in `journalctl -k`, so a retrain window doesn't learn the resume
+    transient itself as normal. `df` must still have its `timestamp` column
+    (call this before dropping it). Best-effort: if journalctl can't be
+    read for any reason, returns `df` unchanged rather than failing the
+    whole retrain over a diagnostic side-check."""
+    if "timestamp" not in df.columns or df.empty:
+        return df
+
+    ts = pd.to_datetime(df["timestamp"])
+    start = ts.min()
+    try:
+        out = subprocess.run(
+            ["journalctl", "-k", "--utc", "--since", start.strftime("%Y-%m-%d %H:%M:%S"), "--no-pager"],
+            capture_output=True, text=True, timeout=15,
+        ).stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return df
+
+    resume_times = []
+    for line in out.splitlines():
+        if "PM: suspend exit" in line:
+            m = re.match(r"^(\w+ \d+ \d+:\d+:\d+)", line)
+            if m:
+                try:
+                    dt = datetime.strptime(m.group(1), "%b %d %H:%M:%S").replace(year=ts.max().year)
+                    resume_times.append(dt)
+                except ValueError:
+                    continue
+
+    if not resume_times:
+        return df
+
+    mask = pd.Series(True, index=df.index)
+    for rt in resume_times:
+        window_end = rt + timedelta(minutes=buffer_minutes)
+        mask &= ~((ts >= rt) & (ts <= window_end))
+
+    return df[mask].reset_index(drop=True)
 
 
 def init_gpu_handle():

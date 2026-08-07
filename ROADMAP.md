@@ -369,6 +369,51 @@ like the rest of this roadmap once there's appetite to build it.
 
 ---
 
+## Note: Agent Behavioral Attribution (not a phase, tracked here for later, added 2026-08-06)
+
+**Goal:** deepen Phase 1's Process Attribution from "which process caused
+this" to "which process, and did it descend from a specific AI agent
+session" — with an explicit, honest distinction between confirmed lineage
+and mere time-correlation. Example of the target output:
+
+- `"Process 18432 modified this file; it descended from this Claude session."`
+- `"The file changed while Claude was active, but Guardian cannot establish causation."`
+
+**Not a new engine** — this is a sharpening of the existing Process
+Attribution sub-item under Behavioral Attestation, not a sixth top-level
+category in `VISION.md`'s five-engine architecture.
+
+**The opportunity:** Claude Code (or any AI coding agent) runs on the same
+machine Guardian already monitors — a real, live subject for developing
+this against actual agent activity, not manufactured test cases. Matches
+the pattern the rest of the attribution work has followed (Phase 1/2's
+real findings — promtail, the dpkg/apt-timer spike — came from live
+activity, not staged scenarios).
+
+**What already exists to build on:** `ebpf_trace.py`/`trace_suspect.sh`
+already does PID-scoped syscall tracing (`openat`/`execve`/`connect`/
+`write`) via the sudoers-gated `bpftrace` wrapper — the mechanism for
+catching "PID X wrote this file" is already there. `process_attribution.py`
+already does top-N process snapshotting. **What's missing:** the ancestry
+walk (trace a PID's parent chain back to confirm — or fail to confirm —
+it descends from a known AI agent session), and the two-branch honest
+output (confirmed vs. correlated-only) instead of a single flat
+attribution claim.
+
+**Status: backlog idea, not scoped or started.** No design decisions made
+yet on how to identify "this process tree belongs to a Claude Code
+session" at the OS level, or how deep the ancestry walk should go. Pick
+this up when the user is ready to actually design/build it — don't
+assume prior context beyond what's written here.
+
+**Sequencing (user's explicit call, 2026-08-06): finish `diagnose_anomaly.py`'s
+wire-the-trigger/approval-gate extension (see the note at the end of the
+Phase 7 section, or `project-aiops-autoencoder` memory) before starting
+this.** Not a hard technical dependency, just the user's stated priority
+order — don't start Agent Behavioral Attribution work ahead of it.
+
+---
+
 ## Note: Kubernetes / horizontal scaling (not a phase, tracked here for later)
 
 microk8s was installed to test whether these scripts could run efficiently at
