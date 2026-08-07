@@ -60,7 +60,7 @@ POLICIES = {
         "max_rows": 5000,
     },
     "retrain_autoencoder": {
-        "expected_files": {"autoencoder_model.keras", "autoencoder_scaler.pkl", "autoencoder_threshold.txt"},
+        "expected_files": {"autoencoder_model.pkl", "autoencoder_scaler.pkl", "autoencoder_threshold.txt"},
         "max_gpu_mib": None,         # no cap -- GPU use is expected/fine here if CUDA ever gets fixed
         "max_network_connects": 0,
         "min_rows": 500,

@@ -20,7 +20,7 @@ import time
 MODEL_DIR  = "/home/beth/aiops-agents"
 DATA_FILE  = "/home/beth/aiops-agents/aiops_data/metrics.csv"
 MODEL_FILES = [
-    "autoencoder_model.keras",
+    "autoencoder_model.pkl",
     "autoencoder_scaler.pkl",
     "autoencoder_threshold.txt",
     "knn_model.pkl",

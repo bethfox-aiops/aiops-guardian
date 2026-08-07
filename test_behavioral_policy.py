@@ -72,7 +72,7 @@ class TestVerify:
         # max_gpu_mib=None -- GPU use should NOT be flagged for it.
         result = verify(
             "retrain_autoencoder",
-            files_touched={"autoencoder_model.keras", "autoencoder_scaler.pkl", "autoencoder_threshold.txt"},
+            files_touched={"autoencoder_model.pkl", "autoencoder_scaler.pkl", "autoencoder_threshold.txt"},
             gpu_mib=500,  # would fail retrain_knn's policy, should pass here
             network_connects=0,
             row_count=100000,

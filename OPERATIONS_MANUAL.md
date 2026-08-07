@@ -366,7 +366,9 @@ Port 8012, `iforest_model.pkl`. Cross-checks KNN's anomaly calls using the same 
 
 ### 4.8 Autoencoder Watchdog
 
-Port 8013, `autoencoder_model.keras` + `autoencoder_threshold.txt`. Reconstruction error as the anomaly signal. **Status update: this is now a live systemd service** (`aiops-watchdog-autoencoder.service`) — the April manual's "functional, not currently running as systemd service" note is stale. Still TensorFlow CPU-only (`Error loading CUDA libraries` in every training log) despite a capable GPU sitting idle — unaddressed, separate future work if GPU-accelerated training is ever wanted.
+Port 8013, `autoencoder_model.pkl` + `autoencoder_threshold.txt`. Reconstruction error as the anomaly signal. **Status update: this is now a live systemd service** (`aiops-watchdog-autoencoder.service`) — the April manual's "functional, not currently running as systemd service" note is stale.
+
+**Model swap (2026-08-07):** switched from a hand-rolled Keras/TensorFlow network to PyOD's `AutoEncoder` (torch-backed) — the same library KNN/iForest already use, so its threshold is now set via `contamination` (0.01, tighter than KNN/iForest's 0.05 — carried forward from the 2026-08-03 lesson that this model's normal-sample score variance is wide) instead of a bespoke percentile-of-validation-MSE computation. Also newly exposes `aiops_anomaly_feature_reconstruction_error{feature="..."}` — per-feature squared reconstruction error at the last flagged anomaly, so the specific feature(s) driving a score are visible instead of just the aggregate distance. Motivated by the 2026-08-07 driver-outage incident, where the aggregate score alone (1.46 million) gave no hint that `gpu_*` features flatlining to zero was the actual cause.
 
 ### 4.9 Windows Watchdog (new, not in April manual)
 
