@@ -30,7 +30,7 @@ Real-time AIOps watchdog agent using a multi-metric + GPU IFOREST anomaly detect
 
 This is the live counterpart to:
     - aiops-watchdog-ml.py  (collector)
-    - train_iforest_final.py    (trainer)
+    - retrain_recent_iforest.py    (trainer)
 
 Shared collection/GPU/serving logic lives in watchdog_common.py; this file
 only supplies the IFOREST-specific model loading, feature-matrix
@@ -38,7 +38,7 @@ construction, and scoring.
 """
 
 import joblib
-import pandas as pd
+import numpy as np
 
 import watchdog_common as common
 from watchdog_common import WatchdogConfig
@@ -64,7 +64,7 @@ def load_model():
 
 
 def build_input(features, columns):
-    return pd.DataFrame([features], columns=columns)
+    return np.array([features])
 
 
 def score(state, X_scaled):
