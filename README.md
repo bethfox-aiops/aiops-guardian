@@ -15,6 +15,7 @@ This README is intentionally short — it's a map, not the manual. Detail lives 
 - **[`VISION.md`](VISION.md)** — the long-term architectural direction (the five-engine model, the north-star question this project is organized around).
 - **[`ROADMAP.md`](ROADMAP.md)** — the phased, mutable execution plan for the Behavioral Attestation engine, plus honest gap-tracking notes.
 - **[`EDGE_ARCHITECTURE.md`](EDGE_ARCHITECTURE.md)** — future-state plan for deploying Guardian to customer sites (planning only, not built).
+- **[`PI_SETUP_CHECKLIST.md`](PI_SETUP_CHECKLIST.md)** — practical checklist for flashing/provisioning a Raspberry Pi Edge Collector, written from real setup pain (SSH/WiFi/cloud-init gotchas). Follow this before the SD card goes into any Pi.
 - **[`NIST_AI_RMF_REFERENCE.md`](NIST_AI_RMF_REFERENCE.md)** — the actual NIST AI RMF 1.0 Core text (all four functions, every subcategory), reference material only.
 - **[`NIST_AI_RMF_GAP_ANALYSIS.md`](NIST_AI_RMF_GAP_ANALYSIS.md)** — Guardian mapped against all 72 NIST subcategories, traceability-matrix format, honestly scored (nothing marked "Planned" that wasn't actually built).
 - **[`GOVERNANCE_POLICIES.md`](GOVERNANCE_POLICIES.md)** — the written policies (risk tolerance, model decommissioning, third-party library review, failure contingency) that closed the gap analysis's flat Gaps.
