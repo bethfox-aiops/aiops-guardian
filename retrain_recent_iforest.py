@@ -28,11 +28,13 @@ from retrain_common import (
     DATA_FILE,
     FEATURES,
     RECENT_ROWS,
+    RECENT_WINDOW_HOURS,
     archive_current_models,
     init_gpu_handle,
     monitor_self,
     report_self_attribution,
     run_verification,
+    select_recent_window,
 )
 
 _gpu_handle = init_gpu_handle()
@@ -52,8 +54,8 @@ if __name__ == "__main__":
 
         with tracer.start_as_current_span("load_data") as span:
             df = pd.read_csv(DATA_FILE).dropna()
-            df = df.tail(RECENT_ROWS).reset_index(drop=True)
-            print(f"[INFO] Training on most recent {len(df)} rows.")
+            df = select_recent_window(df)
+            print(f"[INFO] Training on {len(df)} rows spanning the last {RECENT_WINDOW_HOURS}h.")
 
             X = transform_bursty_features_df(df[FEATURES]).values
 

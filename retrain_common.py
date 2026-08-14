@@ -12,9 +12,7 @@ validation-split threshold derivation in particular).
 """
 
 import os
-import re
 import shutil
-import subprocess
 import threading
 import time
 from contextlib import contextmanager
@@ -26,6 +24,7 @@ import psutil
 from ebpf_trace import trace_suspect_process
 from gpu_attribution import poll_max_gpu_usage
 from behavioral_policy import verify
+from resume_detection import RESUME_EXCLUSION_BUFFER_MINUTES, get_resume_times
 
 DATA_FILE = "aiops_data/metrics.csv"
 
@@ -70,48 +69,49 @@ FEATURES = [
 # override it to differ, not silently forget to update it.
 RECENT_ROWS = 2000
 
-# Confirmed twice (2026-08-06, 2026-08-07) via real retrains: a training
-# window that still contains the actual resume transient (disk catch-up
-# burst, CPU blip, GPU cold-start warming from ~27C to steady-state) gets
-# baked into the model as "normal," inflating the autoencoder's threshold
-# roughly 10-30x. Validated empirically before deploying -- 15/30/45-minute
-# buffers were tried against real data; 45 minutes was the shortest buffer
-# that consistently (not just on a lucky run) brought the threshold back
-# down close to the historical healthy baseline.
-RESUME_EXCLUSION_BUFFER_MINUTES = 45
+# 2026-08-14 KNN drift fix: a plain df.tail(RECENT_ROWS) only spans ~3.3
+# continuous hours at the ~6s sampling rate -- less than one wake/sleep
+# cycle. mem swings ~40-60% over the course of a session (low right after
+# a suspend/resume, climbing as apps/tabs accumulate), so whichever ~3.3h
+# slice a retrain happens to catch bakes in an artificially tight std for
+# that feature; real values from a different part of the cycle later score
+# as 5+ sigma outliers even though they're completely normal. Confirmed via
+# a real KNN retrain that landed in an afternoon-usage slice (mem std 1.75)
+# going sustained-anomalous the next morning post-resume (mem down to
+# 39.4%, z=-5.3 under that scaler). select_recent_window() below fixes this
+# by choosing rows from a wide enough wall-clock span to see the full
+# cycle, then downsampling -- density isn't what was missing, coverage was.
+RECENT_WINDOW_HOURS = 48
 
+
+def select_recent_window(df, window_hours=RECENT_WINDOW_HOURS, target_rows=RECENT_ROWS):
+    """Select training rows spanning `window_hours` of wall-clock time
+    (ending at the most recent row), then evenly downsample to roughly
+    `target_rows` rows. `df` must still have its `timestamp` column. Unlike
+    df.tail(target_rows), this guarantees the training data sees the full
+    range a feature like `mem` covers across a wake/sleep cycle rather than
+    whatever narrow slice happened to be active when the retrain ran --
+    downsampling only thins density, it doesn't shrink the time span."""
+    ts = pd.to_datetime(df["timestamp"])
+    window = df[ts >= ts.max() - timedelta(hours=window_hours)]
+    if len(window) > target_rows:
+        step = len(window) // target_rows
+        window = window.iloc[::step]
+    return window.reset_index(drop=True)
 
 def exclude_resume_transients(df, buffer_minutes=RESUME_EXCLUSION_BUFFER_MINUTES):
     """Drop rows within `buffer_minutes` after any real suspend/resume event
-    found in `journalctl -k`, so a retrain window doesn't learn the resume
-    transient itself as normal. `df` must still have its `timestamp` column
-    (call this before dropping it). Best-effort: if journalctl can't be
-    read for any reason, returns `df` unchanged rather than failing the
-    whole retrain over a diagnostic side-check."""
+    found in `journalctl -k` (via resume_detection.get_resume_times), so a
+    retrain window doesn't learn the resume transient itself as normal.
+    `df` must still have its `timestamp` column (call this before dropping
+    it). Best-effort: if journalctl can't be read for any reason, returns
+    `df` unchanged rather than failing the whole retrain over a diagnostic
+    side-check."""
     if "timestamp" not in df.columns or df.empty:
         return df
 
     ts = pd.to_datetime(df["timestamp"])
-    start = ts.min()
-    try:
-        out = subprocess.run(
-            ["journalctl", "-k", "--utc", "--since", start.strftime("%Y-%m-%d %H:%M:%S"), "--no-pager"],
-            capture_output=True, text=True, timeout=15,
-        ).stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return df
-
-    resume_times = []
-    for line in out.splitlines():
-        if "PM: suspend exit" in line:
-            m = re.match(r"^(\w+ \d+ \d+:\d+:\d+)", line)
-            if m:
-                try:
-                    dt = datetime.strptime(m.group(1), "%b %d %H:%M:%S").replace(year=ts.max().year)
-                    resume_times.append(dt)
-                except ValueError:
-                    continue
-
+    resume_times = get_resume_times(ts.min())
     if not resume_times:
         return df
 

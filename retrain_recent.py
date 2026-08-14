@@ -47,6 +47,7 @@ from retrain_common import (
     monitor_self,
     report_self_attribution,
     run_verification,
+    select_recent_window,
 )
 
 _gpu_handle = init_gpu_handle()
@@ -68,9 +69,10 @@ if __name__ == "__main__":
         with tracer.start_as_current_span("load_data") as span:
             df = pd.read_csv(DATA_FILE)
 
-            # Extra margin before filtering, so excluding resume-transient
+            # Wide-window selection (2026-08-14, see retrain_common.py) with
+            # extra margin before filtering, so excluding resume-transient
             # rows still leaves enough to reach RECENT_ROWS afterward.
-            df = df.tail(RECENT_ROWS + 1000)
+            df = select_recent_window(df, target_rows=RECENT_ROWS + 1000)
             rows_before_filter = len(df)
             df = exclude_resume_transients(df)
             excluded = rows_before_filter - len(df)

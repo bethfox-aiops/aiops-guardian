@@ -25,6 +25,12 @@ from process_attribution import get_top_processes
 from ebpf_trace import trace_suspect_process
 from feature_transform import transform_bursty_features
 from gpu_attribution import get_gpu_usage_for_pid
+from resume_detection import RESUME_EXCLUSION_BUFFER_MINUTES, seconds_since_last_resume
+
+# journalctl is cheap, but there's no reason to shell out to it every
+# 5s loop tick for an event (suspend/resume) that happens at most a
+# handful of times a day -- re-check on this cadence instead.
+RESUME_CHECK_INTERVAL_S = 60
 
 
 def get_disk_extras(mountpoint: str, elapsed: float, prev_disk_used: int | None):
@@ -256,11 +262,21 @@ def run(config: WatchdogConfig) -> None:
 
     try:
         prev_disk_used = None
+        resume_check_prev = 0.0
+        in_resume_grace = False
         while True:
             time.sleep(interval)
 
             t_now = time.time()
             elapsed = max(t_now - t_prev, 1e-6)
+
+            if t_now - resume_check_prev >= RESUME_CHECK_INTERVAL_S:
+                resume_check_prev = t_now
+                since_resume_s = seconds_since_last_resume()
+                in_resume_grace = (
+                    since_resume_s is not None
+                    and since_resume_s < RESUME_EXCLUSION_BUFFER_MINUTES * 60
+                )
 
             disk_pct, disk_free_gb, disk_fill_rate_mb_min, inode_pct, prev_disk_used = get_disk_extras("/", elapsed, prev_disk_used)
             cpu_pct = psutil.cpu_percent(interval=None)
@@ -313,6 +329,20 @@ def run(config: WatchdogConfig) -> None:
             X_scaled = state["scaler"].transform(X)
 
             label, score = config.score(state, X_scaled)
+
+            # Suppress alerting during the same post-resume transient the
+            # retrain scripts already exclude from training (2026-08-14) --
+            # a real, known-noisy window (catch-up jobs, cold caches), not
+            # a genuine anomaly. Score/gauge still reflects the raw value
+            # for dashboard visibility; only the boolean label (and the
+            # attribution work it triggers below) is suppressed.
+            if in_resume_grace and label == 1:
+                print(
+                    f"    [RESUME-GRACE] anomaly suppressed (raw label=1, score={score:.4f}) "
+                    f"-- within {RESUME_EXCLUSION_BUFFER_MINUTES}min of last resume",
+                    flush=True,
+                )
+                label = 0
 
             g["anomaly_label"].set(label)
             g["anomaly_score"].set(score)
