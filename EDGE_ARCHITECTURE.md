@@ -112,12 +112,45 @@ the whole three-tier platform up front — this mirrors how Behavioral
 Attestation itself grew (process attribution → eBPF → traces → evidence
 correlation), not designed end-to-end in advance.
 
-**Milestone 1 — prove the deployment path only.** No endpoint agent code
-yet. Buy the Pi, install Raspberry Pi OS/Ubuntu + Prometheus (+ optional
-Grafana) + Guardian Edge, point it at exporters already running on one
-Linux box and one Windows box (`node_exporter`, `windows_exporter`).
-Single question to answer: *can the Pi collect and forward to Guardian
-Core?* Nothing else matters until this works.
+**Milestone 1 — prove the deployment path only. DONE (2026-08-14).** No
+endpoint agent code yet. Buy the Pi, install Raspberry Pi OS/Ubuntu +
+Prometheus (+ optional Grafana) + Guardian Edge, point it at exporters
+already running on one Linux box and one Windows box (`node_exporter`,
+`windows_exporter`). Single question to answer: *can the Pi collect and
+forward to Guardian Core?* Nothing else matters until this works.
+
+Scope was narrowed at execution time to **Windows only** (`DESKTOP-0AJUKU3`'s
+`windows_exporter`, not the Linux/`node_exporter` target) — a deliberate
+call to keep the first real proof to one target, not a gap. What was
+actually built: Prometheus installed on the Pi (`apt install prometheus`,
+Debian 13/trixie has it packaged, 2.53.3), one `scrape_configs` job
+(`windows-node` → `DESKTOP-0AJUKU3:9182`), one `remote_write` target
+pointed at Guardian Core (`http://<core-ip>:9090/api/v1/write`), and a
+`global.external_labels: {edge_site: guardian-proto-1}` so pushed series
+stay distinguishable from Core's own pre-existing direct scrape of the
+same Windows host. On Guardian Core: `--web.enable-remote-write-receiver`
+added to Prometheus's existing systemd drop-in (merged into the current
+`override.conf` rather than left as a second competing drop-in — an
+earlier draft of this change would have silently dropped the already-live
+`--web.enable-lifecycle` flag by clearing `ExecStart` a second time;
+caught via `systemctl cat` before restarting, not after). Verified live:
+all 164 of `windows_exporter`'s default-collector metrics (CPU, memory,
+disk, network, services, system) landing in Guardian Core's Prometheus
+with the `edge_site` label intact, timestamp advancing across repeated
+checks (steady stream, not a one-off), zero errors in the Pi's Prometheus
+log. Confirmed reachable via Grafana's existing datasource (same
+Prometheus instance every current dashboard already queries) but **no
+dashboard/panel built for it yet** — deliberately out of scope for M1,
+which only had to prove the forwarding path.
+
+**Security note carried forward from this change:** Guardian Core's port
+9090 is `ufw ALLOW IN Anywhere` (not scoped to the Pi's IP, unlike the
+narrower pattern used elsewhere in this repo for exactly this reason) —
+enabling the remote-write receiver on it means anything that can reach
+this laptop's 9090 can now push arbitrary time series into Guardian
+Core's Prometheus, not just read from it. Worth scoping to the Pi's IP
+(or a real multi-site CIDR once there's more than one edge device) before
+this goes beyond a single-Pi prototype — see OPERATIONS_MANUAL.md 10.2.
 
 **Milestone 2 — find the gap.** Once M1 works, ask what evidence is
 missing that exporters don't provide (processes, event logs, user/account
