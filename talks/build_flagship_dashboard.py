@@ -197,12 +197,110 @@ panels.append(stat_panel("Root SSH Enabled", "aiops_security_root_ssh_enabled", 
                           thresholds={"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}))
 panels.append(stat_panel("Updates Pending", "aiops_security_updates_pending", x=19, y=39, w=5, h=5))
 
-# ── Row 6: Go Deeper ──────────────────────────────────────────────────────────
-panels.append(row("Go Deeper", 44))
+# ── Row 6: Backup Status ─────────────────────────────────────────────────────
+# Added 2026-08-14, backup_status_collector.py (textfile collector, same
+# pattern as guardian_disk_health.ps1 on the Windows side). "Last Result"
+# is tri-state (Running/Succeeded/Failed), not just running/not-running --
+# a backup that failed or got killed mid-run looks identical to a healthy
+# idle one if all you show is "not running". deja-dup's result comes from
+# comparing its own last-backup (set only on genuine success) vs. last-run
+# (set on every attempt) gsettings; root-backup-to-usb's comes from
+# systemd's own Result= for its Type=oneshot unit -- no log-parsing guess.
+# deja-dup has no progress hook available from outside it, so running/
+# elapsed/last-success/result is the honest ceiling there. root-backup-to-usb.sh
+# invokes duplicity directly (now with --progress, added alongside the
+# collector script), so a real percent-complete is available while running.
+result_mappings = [
+    {"type": "value", "options": {"0": {"text": "Failed", "color": "red"}}},
+    {"type": "value", "options": {"1": {"text": "Succeeded", "color": "green"}}},
+    {"type": "value", "options": {"2": {"text": "Running", "color": "blue"}}},
+]
+panels.append(row("Backup Status", 44))
+panels.append({
+    "type": "stat",
+    "title": "Deja-dup: Last Result",
+    "gridPos": {"h": 5, "w": 6, "x": 0, "y": 45},
+    "datasource": PROM_DS,
+    "targets": [{"expr": 'aiops_backup_last_result{backup="deja_dup"}', "datasource": PROM_DS, "refId": "A"}],
+    "fieldConfig": {
+        "defaults": {
+            "mappings": result_mappings,
+            "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}]},
+        },
+        "overrides": [],
+    },
+    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+})
+panels.append({
+    "type": "stat",
+    "title": "Deja-dup: Time Since Last Success",
+    "gridPos": {"h": 5, "w": 6, "x": 6, "y": 45},
+    "datasource": PROM_DS,
+    "targets": [{"expr": 'time() - aiops_backup_last_success_timestamp{backup="deja_dup"}', "datasource": PROM_DS, "refId": "A"}],
+    "fieldConfig": {
+        "defaults": {
+            "unit": "dtdurations",
+            "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 604800}, {"color": "red", "value": 1209600}]},
+        },
+        "overrides": [],
+    },
+    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+})
+panels.append({
+    "type": "stat",
+    "title": "Root Backup: Last Result",
+    "gridPos": {"h": 5, "w": 6, "x": 12, "y": 45},
+    "datasource": PROM_DS,
+    "targets": [{"expr": 'aiops_backup_last_result{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
+    "fieldConfig": {
+        "defaults": {
+            "mappings": result_mappings,
+            "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}]},
+        },
+        "overrides": [],
+    },
+    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+})
+panels.append({
+    "type": "stat",
+    "title": "Root Backup: Time Since Last Success",
+    "gridPos": {"h": 5, "w": 6, "x": 18, "y": 45},
+    "datasource": PROM_DS,
+    "targets": [{"expr": 'time() - aiops_backup_last_success_timestamp{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
+    "fieldConfig": {
+        "defaults": {
+            "unit": "dtdurations",
+            "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "yellow", "value": 604800}, {"color": "red", "value": 1209600}]},
+        },
+        "overrides": [],
+    },
+    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+})
+panels.append({
+    "type": "stat",
+    "title": "Root Backup: % Complete (while running)",
+    "gridPos": {"h": 4, "w": 6, "x": 12, "y": 50},
+    "datasource": PROM_DS,
+    "targets": [{"expr": 'aiops_backup_percent_complete{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
+    "fieldConfig": {
+        "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "mappings": [{"type": "value", "options": {"-1": {"text": "Not Running", "color": "green"}}}],
+            "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": None}]},
+        },
+        "overrides": [],
+    },
+    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+})
+
+# ── Row 7: Go Deeper ──────────────────────────────────────────────────────────
+panels.append(row("Go Deeper", 54))
 panels.append({
     "type": "text",
     "title": "Component Dashboards",
-    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 45},
+    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 55},
     "options": {
         "mode": "markdown",
         "content": (
