@@ -152,10 +152,59 @@ Core's Prometheus, not just read from it. Worth scoping to the Pi's IP
 (or a real multi-site CIDR once there's more than one edge device) before
 this goes beyond a single-Pi prototype — see OPERATIONS_MANUAL.md 10.2.
 
-**Milestone 2 — find the gap.** Once M1 works, ask what evidence is
-missing that exporters don't provide (processes, event logs, user/account
-changes, SSH keys, etc.) — this produces the actual feature list for the
-endpoint agent, instead of guessing it up front.
+**Milestone 2 — find the gap. DONE (2026-08-14).** Once M1 works, ask what
+evidence is missing that exporters don't provide (processes, event logs,
+user/account changes, SSH keys, etc.) — this produces the actual feature
+list for the endpoint agent, instead of guessing it up front.
+
+Method: cross-referenced what `windows_exporter` actually exposes on
+`DESKTOP-0AJUKU3` (confirmed live via `windows_exporter_collector_success`
+— only `cpu, logical_disk, memory, net, os, physical_disk, service,
+system, textfile` are enabled; notably **not** `process`) against Guardian
+Core's real security/health/AI-risk checks (`guardian_security.py`,
+`process_attribution.py`, `guardian_ai_risk.py`, Behavioral Attestation
+Phases 1-2 — 36 distinct functions surveyed). Findings, most important
+first:
+
+1. **Process-level visibility — the biggest gap.** `get_top_processes`,
+   root-process count, zombie count, procs running from `/tmp`: zero
+   equivalent for the Windows endpoint right now. `windows_exporter` ships
+   an optional `process` collector but it isn't enabled — no per-process
+   CPU/mem/handle data reaches Guardian Core at all currently. This is
+   Guardian's core "who caused this anomaly" differentiator (Behavioral
+   Attestation Phase 1) and it's completely dark for anything monitored
+   only via exporters.
+2. **Security/integrity checks — entirely absent.** SSH key changes, new
+   user accounts, sudo activity, cron/scheduled-task changes, service
+   *config* changes (vs. just state, which is covered), SUID-binary- and
+   sudoers.d-equivalents, package/patch integrity, failed logins,
+   driver/kernel-module changes. 15+ checks with zero exporter coverage —
+   real endpoint-agent territory, not fixable by enabling another
+   collector flag.
+3. **Network/connection-level detail.** `windows_exporter` gives aggregate
+   byte/packet counters only — no equivalent of outbound-connection count,
+   high-port-listener detection, DNS-connection tracking, or promiscuous-
+   interface detection. Would need something like `Get-NetTCPConnection`
+   queried locally.
+4. **eBPF/syscall tracing (Behavioral Attestation Phase 2) — structurally
+   unavailable via any exporter.** The real Windows analog is ETW/Sysmon,
+   a fundamentally heavier mechanism than anything else on this list —
+   worth treating as its own future scope, not folded into M3.
+5. **AI-risk detection** (`detect_ai_packages/processes/api_keys`) — same
+   process-visibility gap as #1, plus no installed-software inventory.
+
+**Already covered, not a gap:** CPU/mem/disk/network throughput, service
+*state* (already used by the `CRITICAL_SERVICES` check in
+`aiops-watchdog-windows.py`), boot time. There's also already a working
+precedent for exactly this fill-the-gap pattern: `guardian_disk_health.ps1`,
+a small PowerShell script writing a textfile-collector `.prom` file to
+cover the SMART/disk-Event-Log gap `windows_exporter` doesn't — the model
+to follow for whichever M3 capability gets built first.
+
+**Candidate for M3:** process-level attribution (#1) — Guardian's core
+differentiator, has a clean precedent to follow, small enough to be one
+real capability rather than a redesign. Not started; this is a
+recommendation for the next session, not a decision made.
 
 **Milestone 3 — write exactly one endpoint capability.** Not "the agent" —
 one capability (e.g. "return running processes"). Prove the concept before
