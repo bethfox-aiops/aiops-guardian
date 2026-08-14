@@ -37,6 +37,19 @@ to be patched in after the fact. Set all of:
       especially once there's more than one Pi (multi-site future plan in
       `EDGE_ARCHITECTURE.md`). Collisions on the default hostname make
       mDNS discovery ambiguous.
+      **If this was skipped and the Pi already booted** (confirmed working
+      2026-08-14, renaming `raspberrypi` → `guardian-proto-1` post-hoc):
+      `preserve_hostname: false` in `/etc/cloud/cloud.cfg` looks like it'll
+      fight you, but this image's cloud-init is pre-baked "already
+      completed" (see Recovering section below) so it won't actually
+      re-run and revert the change. Just: `sudo hostnamectl set-hostname
+      <new-name>`, then manually fix `/etc/hosts` (`hostnamectl` does
+      *not* update the `127.0.1.1` line — do it yourself or `sudo` will
+      print DNS-resolution warnings), then `sudo systemctl restart
+      avahi-daemon` so the new `<new-name>.local` mDNS name is reachable
+      immediately instead of only after next boot. SSH host key is
+      unchanged (tied to the machine, not the name) — new connections
+      just need one `accept-new` for the not-yet-seen hostname string.
 
 If you skip this screen and flash a plain image, everything below still
 works, but expect the "recovering from a plain image" path (bottom of this
