@@ -62,6 +62,35 @@ doc) instead of a clean first boot.
       be reachable within ~60-90 seconds via `<hostname>.local`.
 - [ ] Verify you can SSH in **with the account you actually intended**
       (not an assumed default). `ssh <user>@<hostname>.local`.
+- [ ] **Check `sudo -n -l` and lock it down — don't leave the image default.**
+      (Confirmed 2026-08-16, `guardian-proto-1`.) Raspberry Pi OS images ship
+      the default user with unrestricted `(ALL) NOPASSWD: ALL` sudo out of
+      the box, usually from **two** separate files
+      (`/etc/sudoers.d/010_pi-nopasswd` plus a cloud-init-generated
+      `90-cloud-init-users` if this image uses cloud-init) — check both, not
+      just one. Also check `sshd -T | grep passwordauthentication`: it may
+      be `yes` at the daemon level even though the account has no password
+      set, which means the *only* thing stopping remote password login is
+      the account being locked — one `passwd` command away from silently
+      opening it. Fix in this order:
+      1. Add `PasswordAuthentication no` as its own file in
+         `/etc/ssh/sshd_config.d/` (validate with `sudo sshd -t` before
+         `systemctl reload ssh`) — makes key-only SSH deliberate, not an
+         accident of the account having no password.
+      2. *Only after* step 1, set a real password on the account
+         (`echo 'user:password' | sudo chpasswd`) as a `sudo`/local-console
+         fallback — safe now that it can't be used for remote login.
+      3. Replace the blanket sudoers grant(s) with a narrow allowlist (e.g.
+         `user ALL=(root) NOPASSWD: /usr/bin/systemctl restart <service>`) —
+         add the narrow rule *before* removing the broad one (so there's
+         never a gap with zero passwordless access while validating), then
+         rename (don't delete) the broad-grant file(s) with a `.disabled`
+         suffix so they're recoverable. Validate every step with
+         `sudo visudo -c` before moving to the next.
+      This especially matters for this device specifically — see
+      `EDGE_ARCHITECTURE.md`'s multi-site plan; default credentials/sudo on
+      something eventually deployed on a customer's network is a real risk,
+      not just tidiness.
 - [ ] Check the clock: `date`. The Pi has no RTC — it needs real internet
       access before NTP can correct it. If it's on WiFi with a working
       gateway, this self-corrects within seconds of boot; if it's stuck on

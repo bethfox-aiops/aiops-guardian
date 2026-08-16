@@ -152,6 +152,8 @@ Core's Prometheus, not just read from it. Worth scoping to the Pi's IP
 (or a real multi-site CIDR once there's more than one edge device) before
 this goes beyond a single-Pi prototype — see OPERATIONS_MANUAL.md 10.2.
 
+**Pi-side security hardening, closed 2026-08-16:** `guardian-proto-1` shipped with the Raspberry Pi OS default — unrestricted `pi ALL=(ALL) NOPASSWD: ALL` sudo (from two separate files, the image default plus a cloud-init-generated one) — and `sshd` configured to accept password authentication at the daemon level, with only the account's locked password standing between that and remote password-guessable login. Both closed: `PasswordAuthentication no` set explicitly (deliberate now, not an accident of the account having no password), a real password added to the account afterward as a local-console/`sudo` fallback only (safe once SSH can't use it remotely), and the blanket sudo grant replaced with one scoped rule (`systemctl restart prometheus.service` — the only thing actually needed passwordlessly so far). Full procedure, including the safe ordering to avoid locking yourself out mid-change, now in `PI_SETUP_CHECKLIST.md`. **Matters specifically for the multi-site consulting plan** (not just this prototype): default credentials/sudo on a device meant to eventually sit on a customer's network is a real risk, worth checking at flash time for every future Pi rather than fixing after the fact each time.
+
 **Milestone 2 — find the gap. DONE (2026-08-14).** Once M1 works, ask what
 evidence is missing that exporters don't provide (processes, event logs,
 user/account changes, SSH keys, etc.) — this produces the actual feature
