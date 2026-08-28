@@ -43,6 +43,10 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:8011"]
 
+  - job_name: "aiops-watchdog-knn-online-pilot"
+    static_configs:
+      - targets: ["localhost:8019"]
+
   - job_name: "aiops-watchdog-iforest"
     static_configs:
       - targets: ["localhost:8012"]

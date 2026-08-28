@@ -14,3 +14,5 @@ full_system_report_*.md
 system_report_*.md
 report_state.json
 reports/
+.venv-pilot/
+pilot_knn_online.log

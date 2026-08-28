@@ -205,12 +205,70 @@ to follow for whichever M3 capability gets built first.
 
 **Candidate for M3:** process-level attribution (#1) — Guardian's core
 differentiator, has a clean precedent to follow, small enough to be one
-real capability rather than a redesign. Not started; this is a
-recommendation for the next session, not a decision made.
+real capability rather than a redesign.
+
+**Status update (2026-08-26): M3 script written, not yet deployed.**
+`windows/guardian_process_attribution.ps1` follows the
+`guardian_disk_health.ps1` textfile-collector pattern — top-5-by-CPU and
+top-5-by-memory process snapshots via `Get-Counter`, not the built-in
+`process` collector (deliberately curated, matching Linux's
+`process_attribution.py` top-N approach rather than exposing every
+process). See OPERATIONS_MANUAL.md Chapter 4.9 for full detail. Not yet
+deployed to either Windows host, no dashboard panel, no Scheduled Task
+registered — the script exists and needs real-host verification next.
+Prompted by the Pi (`guardian-proto-1`) being SSH-unreachable that day —
+this work is independent of Pi access (a locally-run PowerShell script,
+nothing Pi-related), so it made sense to pick up while blocked there.
 
 **Milestone 3 — write exactly one endpoint capability.** Not "the agent" —
 one capability (e.g. "return running processes"). Prove the concept before
 generalizing.
+
+**Milestone 4 — real push, not just pull. Planned (2026-08-26), not started.**
+Everything built so far (`guardian_disk_health.ps1`, M3's
+`guardian_process_attribution.ps1`) is *pull*: the script writes a local
+file, `windows_exporter`'s textfile collector re-exposes it, Prometheus
+scrapes it. That's fine for a host Guardian Core can already reach, but it's
+the opposite of the endpoint-agent design above (push, because a
+consultant's Pi/Core usually *can't* reach into a customer network). M4
+is where that actually gets built, using `guardian-proto-1` as the landing
+point per the architecture above rather than pushing to Core directly.
+Ordered, each step depends on the one before it:
+
+1. **Deploy + verify `guardian_process_attribution.ps1` on a real Windows
+   host.** Written 2026-08-26, never run — no PowerShell runtime existed to
+   syntax-check it against. Closes out before adding more surface on top.
+2. **Design the push payload.** Small schema decision needed before any
+   code: JSON over HTTP POST (simple, host-agnostic) vs. the endpoint
+   speaking Prometheus `remote_write` itself (heavier, but reuses the
+   protocol M1 already proved). Minimal shape: `{host, category,
+   timestamp, data}`.
+3. **Build the Pi-side receiver.** Nothing listens for a push today — M1
+   only set the Pi up to scrape *outward*. A small HTTP service accepting
+   evidence and either re-exposing it as textfile-style metrics for the
+   Pi's own Prometheus, or converting and forwarding via the same
+   `remote_write` path M1 proved. Needs a shared-secret/token check: a new
+   inbound listener on a device meant to eventually sit on customer
+   networks is real new attack surface, not a detail to skip.
+4. **Firewall-scope the new listener.** Narrow `ufw` rule for the
+   receiver's port, same discipline as `ufw_guard.sh` elsewhere in this
+   project. Good moment to also close the gap M1 already flagged and left
+   open: Core's port 9090 is currently unscoped `ALLOW IN Anywhere` and
+   accepts remote_write, not just reads.
+5. **Windows push script — security/integrity checks first.** #2 on M2's
+   gap list, right after process attribution (#1, done in M3). New local
+   users (`Get-LocalUser`), failed logons (Security event 4625),
+   Administrators-group membership changes. Same 15-minute Scheduled Task
+   cadence as the existing scripts, but POSTs to the M4 receiver instead of
+   writing a textfile.
+6. **Multi-tenant labeling on this path.** Tag whatever the receiver
+   forwards with `edge_site=guardian-proto-1` (or a `host`/`source` label),
+   matching M1's convention — a from-day-one design constraint per
+   [[project-guardian-edge-consulting]], not something to retrofit once a
+   second site/Pi exists.
+7. **Grafana panel**, once real data is flowing end-to-end. Deliberately
+   last, same "prove it before generalizing" discipline as every milestone
+   so far.
 
 Guardian ends up as three distinct products/deliverables:
 
