@@ -5,10 +5,14 @@ retrain_common.py
 Shared scaffolding for retrain_recent{,_iforest,_knn}.py: the constants,
 GPU init, self-attribution monitoring (Behavioral Attestation Phases 1/2/4
 pointed at our own PID during training), and verify_behavior/verify()
-wiring are identical across all three retrain scripts. Each script keeps
-its own load_data/train_model/save_model span bodies, since those differ
-meaningfully by model (the autoencoder's keras architecture and
-validation-split threshold derivation in particular).
+wiring are identical across all three retrain scripts.
+
+For KNN and IForest the *entire* run flow is identical too (they differ
+only in the model constructor and a handful of names/labels), so it lives
+here as run_simple_retrain() and each script is just a config block. The
+autoencoder retrain (retrain_recent.py) keeps its own body -- its
+load_data step (wide window + resume-transient filtering) and save_model
+step (extra threshold file) differ meaningfully by model.
 """
 
 import os
@@ -18,11 +22,15 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
+import joblib
 import pandas as pd
 import psutil
+from sklearn.preprocessing import StandardScaler
 
 from ebpf_trace import trace_suspect_process
 from gpu_attribution import poll_max_gpu_usage
+from otel_setup import get_tracer
+from feature_transform import transform_bursty_features_df
 from behavioral_policy import verify
 from resume_detection import RESUME_EXCLUSION_BUFFER_MINUTES, get_resume_times
 
@@ -250,3 +258,75 @@ def run_verification(span, policy_name, output_files, run_start_time, gpu_mib, e
         if on_fail:
             on_fail(result["violations"])
     return result
+
+
+def run_simple_retrain(*, name, detector_label, model_factory, model_file,
+                       scaler_file, archive_prefix, service_name, on_fail=None):
+    """Full retrain run for the distance/tree models (KNN, IForest), whose
+    load_data/train_model/save_model/verify_behavior bodies are identical
+    bar the model constructor. `name` is the short model slug used in the
+    tracer service name, span names, and policy name ("knn"/"iforest");
+    `detector_label` is the human name in the training log line;
+    `model_factory` is a zero-arg callable returning a fresh unfitted
+    model (called inside the self-attribution monitor, same as the
+    inline versions did); `on_fail` is forwarded to run_verification().
+
+    The autoencoder retrain does NOT use this -- see module docstring."""
+    tracer = get_tracer(f"aiops-retrain-{name}")
+    gpu_handle = init_gpu_handle()
+    run_start_time = time.time()
+
+    with tracer.start_as_current_span(f"retrain_{name}_run") as run_span:
+        run_span.set_attribute("recent_rows_requested", RECENT_ROWS)
+        trace_id = format(run_span.get_span_context().trace_id, "032x")
+        print(f"[INFO] Trace ID: {trace_id}")
+
+        with tracer.start_as_current_span("load_data") as span:
+            df = pd.read_csv(DATA_FILE).dropna()
+            df = select_recent_window(df)
+            print(f"[INFO] Training on {len(df)} rows spanning the last {RECENT_WINDOW_HOURS}h.")
+
+            X = transform_bursty_features_df(df[FEATURES]).values
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            span.set_attribute("rows_loaded", len(df))
+
+        with tracer.start_as_current_span("train_model") as span:
+            print(f"[INFO] Training {detector_label} anomaly detector...")
+
+            with monitor_self(gpu_handle) as stats:
+                model = model_factory()
+                model.fit(X_scaled)
+
+            evidence = report_self_attribution(span, stats)
+
+            num_anomalies = int((model.labels_ == 1).sum())
+            print(f"[INFO] Anomalies flagged in training data: {num_anomalies} / {len(df)}")
+            span.set_attribute("training_rows", len(df))
+            span.set_attribute("anomalies_in_training_data", num_anomalies)
+
+        with tracer.start_as_current_span("save_model") as span:
+            archive_dir = archive_current_models([model_file, scaler_file], archive_prefix)
+            if archive_dir:
+                print(f"[INFO] Archived previous model to {archive_dir}")
+                span.set_attribute("archived_to", archive_dir)
+
+            joblib.dump(model, model_file)
+            joblib.dump(scaler, scaler_file)
+            print(f"[INFO] Saved {model_file}, {scaler_file}")
+            span.set_attribute("model_file", model_file)
+            span.set_attribute("scaler_file", scaler_file)
+
+        with tracer.start_as_current_span("verify_behavior") as span:
+            run_verification(
+                span, f"retrain_{name}",
+                output_files=(model_file, scaler_file),
+                run_start_time=run_start_time,
+                gpu_mib=stats["gpu_max_mib"],
+                evidence=evidence,
+                row_count=len(df),
+                on_fail=on_fail,
+            )
+
+    print(f"[INFO] Done. Restart {service_name} to load new model.")

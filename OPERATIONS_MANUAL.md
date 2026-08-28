@@ -420,9 +420,9 @@ Output metrics now include `aiops_health_score`, `aiops_security_score`, `aiops_
 
 ### 4.13 Training and Retrain Pipeline
 
-**Original training scripts** (train from scratch on full history): `train_knn_final.py`, `train_iforest.py`, `train_autoencoder_final.py`.
+**Original training scripts** (trained from scratch on full history): `train_knn_final.py`, `train_iforest.py`, `train_autoencoder_final.py` — **removed 2026-08-07** (superseded by the retrain scripts, unscheduled, and predated the `RECENT_ROWS=2000` fix so would have reintroduced the stale-window bug if run by hand). Recoverable via `git log` if ever needed.
 
-**Retrain scripts** (new since April — train on a recent tail of `metrics.csv`, avoiding old-state bias): `retrain_recent_knn.py`, `retrain_recent.py` (autoencoder), `retrain_recent_iforest.py`, sharing common logic in `retrain_common.py`. **Known, currently-live inconsistency:** `RECENT_ROWS = 2000` in `retrain_recent_knn.py` (fixed after a 2026-07-13 incident where the default of 100000 rows pulled in the entire, stale Mar–Jul history) but still `100000` in `retrain_recent.py` and `retrain_recent_iforest.py` — fix the same way (drop to ~2000) before rerunning either of those as-is.
+**Retrain scripts** (new since April — train on a recent window of `metrics.csv`, avoiding old-state bias): `retrain_recent_knn.py`, `retrain_recent.py` (autoencoder), `retrain_recent_iforest.py`, sharing common logic in `retrain_common.py`. `RECENT_ROWS` (2000) and `RECENT_WINDOW_HOURS` (48) are single shared constants in `retrain_common.py` that all three import — the 2026-07-13 incident (a `100000` default pulling in the entire stale Mar–Jul history) and its 2026-08-04 recurrence in `retrain_recent_iforest.py` are closed structurally: there's no per-script copy left to drift. KNN and IForest also share their entire run flow via `retrain_common.run_simple_retrain()` (they differ only in the model constructor); the autoencoder keeps its own body for its window selection and threshold-file save.
 
 None of the retrain scripts restart the corresponding service automatically — that's a deliberate separate manual step (requires sudo, not passwordless).
 

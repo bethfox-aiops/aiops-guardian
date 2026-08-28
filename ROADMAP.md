@@ -472,10 +472,13 @@ grouped so they're actionable later:
 - No automated test suite at all. 60 `ruff` errors sat in the codebase
   undetected until an explicit lint pass (2026-07-19), including a real logic
   bug (`_ufw_denies_port_externally` missing IPv6-only DENY rules).
-- `retrain_recent.py` / `retrain_recent_iforest.py` still have
-  `RECENT_ROWS=100000` vs. `retrain_recent_knn.py`'s `2000` — an unnoticed
-  cross-script inconsistency, i.e. nothing currently checks sibling scripts
-  stay consistent.
+- **Closed (2026-08-05):** `retrain_recent.py` / `retrain_recent_iforest.py`
+  had `RECENT_ROWS=100000` vs. `retrain_recent_knn.py`'s `2000` — an unnoticed
+  cross-script inconsistency with nothing checking sibling scripts stay
+  consistent. `RECENT_ROWS`/`RECENT_WINDOW_HOURS` are now single shared
+  constants in `retrain_common.py` that all three import; KNN and IForest
+  additionally share their whole run flow via `run_simple_retrain()`, so
+  there's no longer a per-script copy to drift.
 - No staging environment — this box is prod, dev, and workstation at once;
   every change is tested live.
 

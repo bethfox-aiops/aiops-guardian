@@ -195,13 +195,18 @@ one file per roadmap phase):
 - `release_record.py` (Phase 6) — ties a git commit to Phases 1–5 evidence
   into one structured release record
 
-**`retrain_recent*.py`** (one per model) retrain against the tail of
+**`retrain_recent*.py`** (one per model) retrain against a recent window of
 `aiops_data/metrics.csv`, instrumented with OTel spans and
 `behavioral_policy.verify()`. They don't restart the corresponding service —
-that's a separate manual step. **Known inconsistency:** `RECENT_ROWS` is `2000`
-in `retrain_recent_knn.py` but still `100000` in `retrain_recent.py`
-(autoencoder) and `retrain_recent_iforest.py` — check which you're touching
-before assuming the row count is sane.
+that's a separate manual step. `RECENT_ROWS` (2000) and `RECENT_WINDOW_HOURS`
+(48) are single shared constants in `retrain_common.py` — all three scripts
+import them, none defines a local copy (this closed a class of drift bug where
+`retrain_recent_iforest.py` silently kept a `100000` default long after the
+others were fixed). The KNN and IForest runs are now *identical* bar the model
+constructor, so the whole flow lives in `retrain_common.run_simple_retrain()`
+and each script is just a config block; `retrain_recent.py` (autoencoder) keeps
+its own body — its window selection (resume-transient filtering) and save step
+(threshold file) genuinely differ.
 
 ## Other notes
 
