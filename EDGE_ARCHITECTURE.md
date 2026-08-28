@@ -270,6 +270,79 @@ Ordered, each step depends on the one before it:
    last, same "prove it before generalizing" discipline as every milestone
    so far.
 
+## External AI/cyber threat observation — evaluation (2026-08-28, analysis only, no code)
+
+User's proposed future Edge capability: have the Pi also observe suspicious
+activity attempting to enter the local environment from outside — not just
+internal system/AI behavior, which is everything Guardian does today. Explicit
+non-goal stated up front: not a firewall/router/IDS/IPS product, just evidence
+collection that can later be correlated with existing endpoint and Behavioral
+Attestation data (external event → edge evidence → endpoint behavioral change
+→ Guardian determines whether the attempt actually had impact). This is the
+same "Edge Collector gathers evidence, Core analyzes/correlates/explains"
+principle already established above, applied to a new evidence *type*
+(network-perimeter) rather than a new engine.
+
+**Fundamental limitation, not a code problem:** sitting where the Pi sits
+today (a normal WiFi client, not inline), it can only see (a) traffic
+addressed to itself (port scans/auth attempts against the Pi specifically —
+free today, e.g. `psad` or iptables/journalctl log parsing) and (b)
+broadcast/multicast on the local segment (ARP/DHCP/mDNS — visible regardless
+of position). Unicast traffic between *other* devices (an attack against a
+Windows host, that host's own outbound traffic) is invisible to the Pi on a
+modern switched network without either a SPAN/mirror port on a managed switch
+(new hardware, ~$30-60, plus wiring the Pi's onboard Gigabit Ethernet — it's
+on WiFi today), a hardware TAP (more correct, unnecessary at home-network
+volume), or an inline/gateway position (ruled out — directly conflicts with
+the stated "not a router" constraint, makes the Pi a single point of failure
+for internet access). Installing an IDS like Suricata on the Pi does not
+solve this by itself; it needs traffic positioned in front of it via one of
+the above, same requirement either way.
+
+**Lower-effort alternative to direct observation:** consume logs from
+something that already has visibility instead of building new observation
+capability. DNS query logs (e.g. if Pi-hole or similar ran on the Pi as the
+network's resolver) are a strong, low-effort source for malicious-
+infrastructure activity (blocklist hits, DGA-domain lookups) with
+network-wide coverage, no SPAN hardware needed — trades a new always-on
+service + a DNS-config change on the router for much broader visibility than
+the self-targeted option alone. Router/gateway log support is unknown for the
+current Frontier-provided gateway and would need checking, not assuming.
+
+**AI-specific vs. traditional split:** of the example threat categories
+discussed, only "attacks against AI systems/LLM interfaces/model
+endpoints/agents/exposed AI services" is genuinely AI-specific — everything
+else (port scanning, failed auth, suspicious IPs, malicious DNS activity,
+generic exploit indicators) is traditional network/security monitoring, not
+novel to this project. Worth being honest that the AI-specific category is
+also currently *inapplicable* in this environment: Guardian's own AI-related
+ports are explicitly `ufw`-denied from external access (see `CLAUDE.md`'s
+security posture note), so there is no externally-exposed AI attack surface
+to defend today. This category becomes concretely actionable only if/when
+something AI-related is ever exposed externally — it's the more novel,
+differentiating part of the idea, but also the part with nothing real to
+detect yet.
+
+**Recommended minimal PoC, if this is picked up later (not started, no
+milestone number assigned yet — doesn't fit the M1-M4 sequence above, which
+is entirely about the pull/push endpoint-agent path, a different problem):**
+
+1. **Pi self-targeted perimeter evidence** — watch for connection attempts
+   aimed at the Pi itself (SSH auth failures, port-scan patterns via `psad`
+   or equivalent), export via the same textfile-collector/Prometheus pattern
+   used everywhere else in this architecture, feed into the same
+   attempt-vs-impact correlation idea. Zero new hardware, fits existing
+   patterns exactly — proves the correlation concept before any hardware
+   spend.
+2. **DNS-based threat evidence** (natural second step) — Pi-hole or
+   equivalent for network-wide malicious-DNS visibility, still no SPAN
+   hardware.
+3. **SPAN-port/network-repositioning work** — only worth it once 1-2 have
+   proven the correlation is actually valuable; real hardware and rewiring
+   investment, not a first step.
+
+See `TODO.md` for the tracked backlog item.
+
 Guardian ends up as three distinct products/deliverables:
 
 1. **Guardian Endpoint Agent** — small, read-only, evidence collection

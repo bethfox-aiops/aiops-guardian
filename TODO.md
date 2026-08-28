@@ -25,3 +25,34 @@ it belongs to.
   **Blocked on:** which notification channel? (email needs an SMTP relay;
   ntfy.sh/Pushover are simpler, no account needed for ntfy.sh; or just
   Alertmanager's own web UI, checked manually.) Decide before building step 2.
+
+- [ ] **Route the second Windows machine (`DESKTOP-503POVP`) through the Pi.**
+  Added 2026-08-28. Right now only `DESKTOP-0AJUKU3` goes through the edge
+  path (Pi scrapes it, `remote_write`s to Core with `edge_site="guardian-proto-1"`)
+  — `DESKTOP-503POVP` is only ever scraped directly by Core, with no edge
+  involvement at all. Needs a second `static_configs` target added to the
+  Pi's `windows-node` scrape job in its `prometheus.yml`, same as
+  `DESKTOP-0AJUKU3`'s entry.
+
+- [ ] **External AI/cyber threat observation on the Pi.** Added 2026-08-28,
+  evaluated same day (analysis only, no code) — full writeup in
+  `EDGE_ARCHITECTURE.md`'s "External AI/cyber threat observation" section.
+  Not started. Summary of the evaluation:
+  - Fits the existing "Edge Collector gathers evidence, Core
+    analyzes/correlates" architecture as a new evidence type, not a new
+    engine.
+  - Real limitation: the Pi isn't inline with network traffic today, so it
+    can only see traffic aimed at itself (free, no new hardware) and local
+    broadcast/multicast — seeing traffic between *other* devices needs a
+    SPAN port on a managed switch (new hardware + wiring), a TAP, or an
+    inline/gateway position (ruled out, conflicts with "not a router").
+  - The AI-specific angle (attacks on LLM interfaces/model endpoints) is
+    real but currently inapplicable here — no AI-related port is externally
+    exposed in this environment today, so there's nothing concrete to
+    detect yet on that front specifically.
+  - **Recommended first step, no new hardware:** Pi self-targeted evidence
+    (SSH auth failures, port-scan patterns via `psad` or equivalent),
+    exported via the existing textfile-collector/Prometheus pattern, feeding
+    the attempt-vs-impact correlation idea. DNS-based threat evidence
+    (Pi-hole or similar) is a reasonable second step; SPAN-port/hardware
+    work is a third tier, only after 1-2 prove the correlation is valuable.
