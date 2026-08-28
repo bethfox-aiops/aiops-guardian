@@ -100,7 +100,7 @@ Guardian
 | ML | All three models running (KNN, Isolation Forest, Autoencoder watchdogs) |
 | Security | Running today via the Guardian security score (file integrity, SSH/user monitoring, AI security checks) |
 | Governance | Approval Dashboard (`aiops-approval.service`) provides the Human Approval piece; a first version of Guardrails also exists (`guardrail_exporter.py`, `~/aiops-guardrail-lab`, port 8015) — see note below |
-| Behavioral Attestation ⭐ | New — this is the next engine to build |
+| Behavioral Attestation ⭐ | Built — all six roadmap phases (`ROADMAP.md`) have real, working modules (`process_attribution.py`, `ebpf_trace.py`/`trace_suspect.sh`, `otel_setup.py`, `gpu_attribution.py`, `behavioral_policy.py`, `release_record.py`), wired into the watchdogs and used live (e.g. the KNN/Autoencoder root-cause attribution in the 2026-08-28 daily report). Phase 7 ("govern the agent, not just the output" — see the Sharper framing note above) is the newest, still-open extension, not a gap in Phases 1–6. |
 
 **Guardrails, v1 (added 2026-07-27):** an early guardrail-policy exporter exists
 at `~/aiops-guardrail-lab/scripts/guardrail_exporter.py` (`guardrail-exporter.service`,
@@ -135,6 +135,44 @@ too-permissive sudoers entry, a script that takes unvalidated input, all hand
 an agent more capability than the task in front of it needs. Guardrails, in
 this framing, are as much about constraining what *engineers accidentally
 build for agents to use* as about constraining the agent itself.
+
+## Pipeline health model
+
+Guardian doesn't just observe target systems — it depends on its own pipeline
+staying healthy in order to observe anything at all. That pipeline breaks down
+into five layers, each of which can fail silently and independently of the
+others:
+
+> **endpoint health → edge health → transport health → ingestion health → analysis health**
+
+- **Endpoint health** — is the collector on the observed host actually running
+  and producing fresh data (a textfile-collector script, a watchdog process)?
+- **Edge health** — is the intermediate collection point itself up (the Pi,
+  `guardian-proto-1`, in the current edge architecture)?
+- **Transport health** — is data actually moving between stages (`remote_write`
+  from edge to Core, a scrape succeeding)?
+- **Ingestion health** — is Core actually receiving and storing what's sent to
+  it (Prometheus accepting writes)?
+- **Analysis health** — is the layer that turns raw data into a verdict (the
+  anomaly watchdogs, the scoring engines) producing correct output from what
+  it's given?
+
+**Why this matters, concretely (2026-08-28):** the Pi's `remote_write` to Core
+was silently broken for ~12 days — a pure transport-health failure. Endpoint
+health (the Windows collector scripts) and edge health (the Pi's own scrape of
+those hosts) both looked completely fine the whole time, which is exactly why
+nobody noticed: nothing was watching the transport layer specifically. A
+monitoring system that only checks "is the data I have right now healthy"
+(analysis health, roughly what the daily report and the anomaly watchdogs do)
+will never catch a failure at an earlier layer that just results in *no new
+data arriving* — that reads as quiet, not broken.
+
+**How to apply:** any future Guardian self-monitoring work should be scoped
+against this model explicitly — name which layer(s) it covers, and treat "we
+monitor the pipeline" as false until all five layers have real, independent
+checks. The Core self-monitoring work in `TODO.md` (data-freshness alerting +
+Alertmanager) is transport-health monitoring specifically — it does not, on
+its own, cover endpoint or ingestion health, which remain open gaps.
 
 ## Deliberately narrow scope
 
