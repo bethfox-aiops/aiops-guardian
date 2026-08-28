@@ -23,6 +23,7 @@ bursty, time-sensitive events, unlike the 15min disk_watchdog.py cadence).
 
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
 
 OUTPUT_FILE = "/var/lib/node_exporter/textfile_collector/aiops_backup_status.prom"
@@ -57,13 +58,87 @@ def _elapsed_seconds(pid):
     return float(out) if out.isdigit() else None
 
 
+def _descendant_pids(root_pid):
+    """Every PID in the process subtree rooted at root_pid (root included)."""
+    out = _run(["ps", "-eo", "pid=,ppid="])
+    kids = {}
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) == 2 and f[0].isdigit() and f[1].isdigit():
+            kids.setdefault(int(f[1]), []).append(int(f[0]))
+    seen, stack = set(), [int(root_pid)]
+    while stack:
+        p = stack.pop()
+        if p in seen:
+            continue
+        seen.add(p)
+        stack.extend(kids.get(p, []))
+    return sorted(seen)
+
+
+def _subtree_has(pids, needle):
+    if not pids:
+        return False
+    out = _run(["ps", "-o", "args=", "-p", ",".join(str(p) for p in pids)])
+    return any(needle in line for line in out.splitlines())
+
+
+def _tree_cpu_jiffies(pids):
+    """Summed utime+stime (USER_HZ jiffies) across the given PIDs, now."""
+    total = 0
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat") as fh:
+                data = fh.read()
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+        try:
+            # comm (field 2) is parenthesised and may itself contain spaces
+            # and ')', so split from after the last ')': utime/stime are then
+            # fields 14/15, i.e. offsets 11/12 counting state as offset 0.
+            after_comm = data[data.rindex(")") + 1:].split()
+            total += int(after_comm[11]) + int(after_comm[12])
+        except (ValueError, IndexError):
+            continue
+    return total
+
+
+def _deja_dup_active(pid):
+    """
+    True only if the deja-dup process tree is actually *doing* a backup, not
+    merely resident. Unlike a systemd oneshot, deja-dup leaves its
+    `--backup --auto` process alive and idle (sleeping in poll(), 0% CPU) for
+    a long time after an auto backup finishes -- keying 'running' off process
+    existence alone reported a finished backup as still running for ~2h
+    (observed 2026-08-28). Two activity signals, cheapest first:
+      1. a `duplicity` descendant -- deja-dup shells out to duplicity for the
+         actual transfer and it stays resident for the whole transfer, even
+         through I/O and network stalls. Scoped to this subtree, so it is
+         never confused with the root_usb backup's own duplicity.
+      2. failing that, measurable CPU burn across the subtree over a short
+         sample -- covers deja-dup's own scan/compare phases that run before
+         any duplicity child exists.
+    A brief stall in a non-duplicity phase can momentarily read as idle; the
+    next 30s cycle re-checks, so at worst 'running' drops one scan early, vs.
+    the old failure of never dropping at all.
+    """
+    pids = _descendant_pids(pid)
+    if _subtree_has(pids, "duplicity"):
+        return True
+    before = _tree_cpu_jiffies(pids)
+    time.sleep(2.0)
+    after = _tree_cpu_jiffies(_descendant_pids(pid))  # re-list: children churn
+    return (after - before) >= 5  # ~2.5% of one core over the sample
+
+
 RESULT_RUNNING, RESULT_FAILED, RESULT_SUCCESS = 2, 0, 1
 
 
 def collect_deja_dup():
     pid = _process_running("deja-dup")
-    running = 1 if pid else 0
-    elapsed = _elapsed_seconds(pid) if pid else None
+    active = bool(pid) and _deja_dup_active(pid)
+    running = 1 if active else 0
+    elapsed = _elapsed_seconds(pid) if active else None
     last_backup_raw = _run(["gsettings", "get", "org.gnome.DejaDup", "last-backup"])
     last_success = _iso_to_epoch(last_backup_raw)
 
@@ -80,7 +155,10 @@ def collect_deja_dup():
         # a real case: today's run got stuck and was killed, but its actual
         # data transfer had already completed and set last-backup before
         # the stuck phase -- correctly reads as success, not a false
-        # failure, because the transfer genuinely did succeed.
+        # failure, because the transfer genuinely did succeed. This branch
+        # is now also taken while the deja-dup process is still resident but
+        # idle after a completed run (see _deja_dup_active), which used to
+        # wedge at RESULT_RUNNING for as long as the process lingered.
         last_run_raw = _run(["gsettings", "get", "org.gnome.DejaDup", "last-run"])
         last_run = _iso_to_epoch(last_run_raw)
         if last_run is not None and last_success is not None and last_success >= last_run:
