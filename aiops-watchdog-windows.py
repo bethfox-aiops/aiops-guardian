@@ -78,10 +78,24 @@ def prom_query_by_instance(expr):
 
 
 def discover_instances():
-    """Returns {instance: is_up_bool} for every configured windows-node target."""
+    """Returns {instance: is_up_bool} for every configured windows-node target.
+
+    Excludes edge_site-labeled series: the guardian-proto-1 Pi prototype
+    (EDGE_ARCHITECTURE.md M1) scrapes DESKTOP-0AJUKU3's windows_exporter by
+    IP and remote_writes it into Core under its own instance label
+    (192.168.254.108:9182) *in addition to* Core's own direct hostname
+    scrape of the same physical host -- deliberately, so the two stay
+    distinguishable for future edge-vs-direct comparison work. But this
+    watchdog has no host-identity concept beyond the `instance` label, so
+    without this filter it counts that one physical machine as two,
+    inflating the Windows host count. `edge_site=""` matches both an
+    absent label (direct scrapes) and an empty one -- PromQL's normal
+    "missing == empty string" rule -- so this is a no-op once there's a
+    real second edge site with its own non-duplicate host to report.
+    """
     return {
         instance: (value == 1)
-        for instance, value in prom_query_by_instance(f'up{{job="{JOB}"}}').items()
+        for instance, value in prom_query_by_instance(f'up{{job="{JOB}",edge_site=""}}').items()
     }
 
 
@@ -166,11 +180,31 @@ def mark_unreachable(instance):
     print(f"[WARN] {instance}: unreachable (up=0), health_score=0", flush=True)
 
 
+def forget_instance(instance):
+    """Drop every gauge series for an instance that's no longer discovered.
+
+    prometheus_client Gauges keep re-exposing the last value set for a given
+    label combination forever -- discover_instances() no longer returning an
+    instance doesn't make its old series disappear on its own. Without this,
+    a target removed from prometheus.yml (e.g. a stale/renamed windows-node
+    host) keeps showing up in scrapes indefinitely at its last-known value
+    until the process is restarted.
+    """
+    for gauge in (g_up, g_cpu_ok, g_mem_ok, g_disk_ok, g_service_ok, g_health_score):
+        try:
+            gauge.remove(instance)
+        except KeyError:
+            pass  # never set for this instance -- nothing to drop
+    print(f"[INFO] {instance}: no longer discovered, removed stale series", flush=True)
+
+
 def main():
     print(f"[INFO] Starting Windows watchdog on port {PORT}", flush=True)
     print(f"[INFO] Interval: {INTERVAL} seconds", flush=True)
     start_http_server(PORT)
     print(f"[INFO] Prometheus metrics available on :{PORT}", flush=True)
+
+    known_instances = set()
 
     while True:
         instances = discover_instances()
@@ -183,6 +217,11 @@ def main():
                 compute_health(instance)
             else:
                 mark_unreachable(instance)
+
+        for stale in known_instances - instances.keys():
+            forget_instance(stale)
+
+        known_instances = set(instances.keys())
 
         time.sleep(INTERVAL)
 
