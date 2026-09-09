@@ -29,6 +29,14 @@ always been slightly off" without needing a hand-maintained exclusion list.
 
 Exposes Prometheus metrics on WATCHDOG_PORT (default: 8018):
     aiops_priority_score{check, detail, tier}
+    aiops_priority_query_ok
+
+aiops_priority_query_ok is 1 if this cycle's Prometheus queries all
+succeeded, 0 if Prometheus itself was unreachable/erroring -- distinct
+from aiops_priority_score, which reflects check state, not Prometheus's
+health. On a failed cycle the previous aiops_priority_score series are
+left in place rather than cleared, since "Prometheus didn't answer" is
+not evidence that anything got healthier.
 """
 
 import json
@@ -105,16 +113,29 @@ g_priority = Gauge(
     ["check", "detail", "tier"],
 )
 
+g_query_ok = Gauge(
+    "aiops_priority_query_ok",
+    "1 if this cycle's Prometheus queries succeeded; 0 if Prometheus itself "
+    "was unreachable/erroring this cycle -- distinct from aiops_priority_score, "
+    "which reflects check state, not Prometheus's health",
+)
+
+
+class PrometheusQueryError(Exception):
+    """Raised when a PromQL query itself fails (Prometheus unreachable/erroring),
+    as opposed to succeeding with zero matching series."""
+
 
 def prom_query(expr):
-    """Returns a list of (labels_dict, float_value) for a PromQL instant query."""
+    """Returns a list of (labels_dict, float_value) for a PromQL instant query.
+    Raises PrometheusQueryError if the query itself failed -- callers must not
+    treat that the same as "query succeeded, no results"."""
     url = f"{PROM_URL}/api/v1/query?" + urllib.parse.urlencode({"query": expr})
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.load(resp)
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        print(f"[WARN] Prometheus query failed: {e}", flush=True)
-        return []
+        raise PrometheusQueryError(str(e)) from e
     result = data.get("data", {}).get("result", [])
     return [(r["metric"], float(r["value"][1])) for r in result]
 
@@ -159,21 +180,27 @@ def novelty_bonus(selector, comparator, target_labels):
 
 
 def check_firing_alerts():
+    """Returns a list of (check, detail, tier, score, bonus) tuples. Raises
+    PrometheusQueryError if the underlying query failed -- doesn't touch
+    g_priority itself, so a failure partway through can't leave it half-updated."""
+    entries = []
     for labels, _ in prom_query('ALERTS{alertstate="firing"}'):
         name = labels.get("alertname", "unknown_alert")
         detail = detail_string(labels) or labels.get("severity", "-")
-        g_priority.labels(check=name, detail=detail, tier=TIER_ALERTS).set(BASE_WEIGHT[TIER_ALERTS])
-        print(f"[INFO] priority={BASE_WEIGHT[TIER_ALERTS]} tier={TIER_ALERTS} check={name} detail={detail}", flush=True)
+        entries.append((name, detail, TIER_ALERTS, BASE_WEIGHT[TIER_ALERTS], None))
+    return entries
 
 
 def check_gauges():
+    """Same contract as check_firing_alerts()."""
+    entries = []
     for tier, name, selector, comparator in CHECKS:
         for labels, _ in prom_query(f"{selector} {comparator}"):
             bonus = novelty_bonus(selector, comparator, labels)
             score = BASE_WEIGHT[tier] + bonus
             detail = detail_string(labels)
-            g_priority.labels(check=name, detail=detail, tier=tier).set(score)
-            print(f"[INFO] priority={score} tier={tier} check={name} detail={detail} novelty_bonus={bonus}", flush=True)
+            entries.append((name, detail, tier, score, bonus))
+    return entries
 
 
 def main():
@@ -183,9 +210,22 @@ def main():
     print(f"[INFO] Prometheus metrics available on :{PORT}", flush=True)
 
     while True:
+        try:
+            entries = check_firing_alerts() + check_gauges()
+        except PrometheusQueryError as e:
+            print(f"[WARN] Prometheus query failed, leaving last-known priority scores in place: {e}", flush=True)
+            g_query_ok.set(0)
+            time.sleep(INTERVAL)
+            continue
+
         g_priority.clear()  # stale (now-healthy) checks shouldn't linger as old series
-        check_firing_alerts()
-        check_gauges()
+        for name, detail, tier, score, bonus in entries:
+            g_priority.labels(check=name, detail=detail, tier=tier).set(score)
+            if bonus is None:
+                print(f"[INFO] priority={score} tier={tier} check={name} detail={detail}", flush=True)
+            else:
+                print(f"[INFO] priority={score} tier={tier} check={name} detail={detail} novelty_bonus={bonus}", flush=True)
+        g_query_ok.set(1)
         time.sleep(INTERVAL)
 
 

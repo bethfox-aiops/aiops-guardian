@@ -32,6 +32,14 @@ Exposes Prometheus metrics on WATCHDOG_PORT (default: 8016):
     aiops_windows_health_disk_ok{instance}
     aiops_windows_health_service_ok{instance}
     aiops_windows_health_score{instance}
+    aiops_windows_query_ok
+
+aiops_windows_query_ok is 1 if this cycle's discovery query against
+Prometheus succeeded, 0 if Prometheus itself was unreachable/erroring --
+distinct from the per-instance health gauges above. On a failed cycle the
+previous instance gauges (and the known-instance set used for stale
+cleanup) are left in place rather than treated as "no instances found",
+since a query failure is not evidence that every Windows host vanished.
 """
 
 import json
@@ -56,17 +64,25 @@ g_mem_ok      = Gauge("aiops_windows_health_mem_ok",      "Memory health: 1=heal
 g_disk_ok     = Gauge("aiops_windows_health_disk_ok",     f"Disk health on {DISK_VOLUME}: 1=healthy (<90% used), 0=unhealthy", ["instance"])
 g_service_ok  = Gauge("aiops_windows_health_service_ok",  "Service health: 1=healthy (no crashed auto-start services), 0=unhealthy", ["instance"])
 g_health_score = Gauge("aiops_windows_health_score",      "Overall Windows host health score (0-100)", ["instance"])
+g_query_ok    = Gauge("aiops_windows_query_ok", "1 if this cycle's Prometheus discovery query succeeded; "
+                      "0 if Prometheus itself was unreachable/erroring this cycle")
+
+
+class PrometheusQueryError(Exception):
+    """Raised when a PromQL query itself fails (Prometheus unreachable/erroring),
+    as opposed to succeeding with zero matching series."""
 
 
 def prom_query_vector(expr):
-    """Returns a list of (labels_dict, float_value) for a PromQL instant query."""
+    """Returns a list of (labels_dict, float_value) for a PromQL instant query.
+    Raises PrometheusQueryError if the query itself failed -- callers must not
+    treat that the same as "query succeeded, no results"."""
     url = f"{PROM_URL}/api/v1/query?" + urllib.parse.urlencode({"query": expr})
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.load(resp)
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        print(f"[WARN] Prometheus query failed: {e}", flush=True)
-        return []
+        raise PrometheusQueryError(str(e)) from e
     result = data.get("data", {}).get("result", [])
     return [(r["metric"], float(r["value"][1])) for r in result]
 
@@ -207,16 +223,27 @@ def main():
     known_instances = set()
 
     while True:
-        instances = discover_instances()
+        try:
+            instances = discover_instances()
+        except PrometheusQueryError as e:
+            print(f"[WARN] Discovery query failed, leaving last-known Windows health gauges in place: {e}", flush=True)
+            g_query_ok.set(0)
+            time.sleep(INTERVAL)
+            continue
+
+        g_query_ok.set(1)
         if not instances:
             print(f'[WARN] No targets found for job="{JOB}" -- is Prometheus scraping windows-node?', flush=True)
 
         for instance, up in instances.items():
             g_up.labels(instance=instance).set(int(up))
-            if up:
-                compute_health(instance)
-            else:
-                mark_unreachable(instance)
+            try:
+                if up:
+                    compute_health(instance)
+                else:
+                    mark_unreachable(instance)
+            except PrometheusQueryError as e:
+                print(f"[WARN] {instance}: health query failed this cycle, leaving previous gauges in place: {e}", flush=True)
 
         for stale in known_instances - instances.keys():
             forget_instance(stale)
