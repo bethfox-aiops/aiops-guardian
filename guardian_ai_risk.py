@@ -9,9 +9,11 @@ reachable watchdog ports), combined into the ai_* gauges by
 calculate_ai_risk_score().
 """
 
+import glob
 import hashlib
 import os
 import socket
+import time
 from importlib import metadata
 
 import psutil
@@ -28,19 +30,47 @@ from guardian_common import (
 )
 
 # ─── AI detection gauges ────────────────────────────────────────────────────
-AI_TOOLS_DETECTED    = Gauge("ai_tools_detected",     "Number of AI-related Python packages detected")
-AI_PROCESSES_RUNNING = Gauge("ai_processes_running",  "Number of AI-related processes currently running")
-AI_API_KEYS_PRESENT  = Gauge("ai_api_keys_present",   "Number of AI-related API key environment variables detected")
+AI_TOOLS_DETECTED    = Gauge("ai_tools_detected",     "Number of AI-related Python packages installed (informational, not a risk penalty)")
+AI_PROCESSES_RUNNING = Gauge("ai_processes_running",  "Number of third-party AI runtimes running (Guardian's own processes excluded)")
+AI_API_KEYS_PRESENT  = Gauge("ai_api_keys_present",   "Number of AI-related API key environment variables in this process")
 AI_RISK_SCORE        = Gauge("ai_risk_score",         "Overall AI risk score (0-100)")
 
 # ─── AI Risk gauges (new) ────────────────────────────────────────────────────
 AI_WATCHDOG_EXTERNAL    = Gauge("ai_watchdog_port_external_access", "1 if watchdog ports reachable from non-loopback IP")
-AI_EXPOSED_KEYS         = Gauge("ai_exposed_api_keys",              "API keys found in env vars or config files")
-AI_LLM_CONNECTIONS      = Gauge("ai_outbound_llm_connections",      "Active connections to known LLM API endpoints")
+AI_EXPOSED_KEYS         = Gauge("ai_exposed_api_keys",              "API keys found on disk (dotfiles, config, systemd units, tracked in git)")
+AI_LLM_CONNECTIONS      = Gauge("ai_outbound_llm_connections",      "Active connections to resolved LLM API endpoint IPs")
 AI_SHADOW_MODELS        = Gauge("ai_shadow_model_count",            "Model files found outside the known model directory")
-AI_TRAINING_CHANGED     = Gauge("ai_training_data_hash_changed",    "1 if training data was modified (not just appended)")
+AI_TRAINING_CHANGED     = Gauge("ai_training_data_hash_changed",    "1 if training CSV changed in a way that isn't a plain append")
 AI_MODEL_AGE_DRIFT      = Gauge("ai_model_file_age_drift",          "1 if a model file mtime changed without its content changing")
 AI_GPU_SPIKE            = Gauge("ai_gpu_spike_no_known_workload",   "1 if GPU above 20% with no known training job running")
+
+# ─── Collection-integrity gauges (added 2026-09-10) ─────────────────────────
+# Without these, a sub-check that raises and returns 0 is indistinguishable
+# from a check that ran and verified "clear" -- the same failure mode the
+# logs watchdog fixed with aiops_logs_query_ok.
+AI_RISK_COLLECTION_OK  = Gauge("ai_risk_collection_ok",            "1 if every AI-risk sub-check completed this cycle without raising")
+AI_CHECK_LAST_SUCCESS  = Gauge("ai_check_last_success_timestamp",  "Unix ts of the last successful run of each AI-risk sub-check", ["check"])
+AI_RISK_REASON         = Gauge("ai_risk_reason",                   "Points currently deducted by each named AI-risk factor (0 when inactive)", ["reason"])
+
+# Last-known-good value per check, so a transient failure falls back to the
+# previous reading instead of a misleading 0.
+_check_last_good: dict = {}
+
+
+def safe_check(name, fn, *args, default=0):
+    """Run an AI-risk sub-check, recording success/failure so a raised
+    exception is distinguishable from a verified-clear result.
+
+    Returns (value, ok). On failure, returns the check's last known-good
+    value (or `default` if it has never succeeded) and ok=False."""
+    try:
+        val = fn(*args)
+        AI_CHECK_LAST_SUCCESS.labels(check=name).set(time.time())
+        _check_last_good[name] = val
+        return val, True
+    except Exception as e:  # noqa: BLE001 -- deliberately broad; one bad check must not kill the cycle
+        print(f"[AI-ERR] sub-check {name!r} raised: {e!r}")
+        return _check_last_good.get(name, default), False
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -104,23 +134,57 @@ _API_KEY_FILE_PATTERNS = [
     "COHERE_API_KEY", "MISTRAL_API_KEY", "REPLICATE_API_TOKEN",
 ]
 
+_REPO_DIR = "/home/beth/aiops-agents"
+
+
+def _git_tracks_secret_file() -> bool:
+    """True if a .env / secrets file is actually committed to the repo -- a
+    much stronger signal than one merely existing on disk."""
+    out = _run(["git", "-C", _REPO_DIR, "ls-files"], timeout=5)
+    for line in out.splitlines():
+        base = os.path.basename(line).lower()
+        if base in (".env", ".env.local", ".env.production", "secrets.env", "credentials"):
+            return True
+        if base.endswith(".env"):
+            return True
+    return False
+
+
 def get_exposed_api_keys() -> int:
-    """Count API keys found in environment variables and common config files."""
+    """Count distinct places an AI API key is exposed on this host: shell
+    dotfiles, ~/.config, ~/.netrc, systemd unit Environment=/EnvironmentFile=
+    lines, and repo .env files -- plus a flag if such a file is committed to
+    git. The scan is bounded (fixed path list + shallow globs) so it stays
+    cheap enough for the 30s health loop."""
     found = set()
+
     # Env vars in this process
     for v in _API_KEY_FILE_PATTERNS:
         if os.environ.get(v):
             found.add(f"env:{v}")
-    # Common files
+
     check_files = [
         os.path.expanduser("~/.env"),
+        os.path.expanduser("~/.env.local"),
         os.path.expanduser("~/.bashrc"),
         os.path.expanduser("~/.bash_profile"),
+        os.path.expanduser("~/.bash_aliases"),
         os.path.expanduser("~/.profile"),
-        "/home/beth/aiops-agents/.env",
+        os.path.expanduser("~/.zshrc"),
+        os.path.expanduser("~/.netrc"),
+        os.path.expanduser("~/.pam_environment"),
+        os.path.expanduser("~/.config/environment.d/99-personal.conf"),
+        f"{_REPO_DIR}/.env",
+        f"{_REPO_DIR}/.env.local",
     ]
+    # Shallow globs: systemd user/system units and environment.d fragments,
+    # where an EnvironmentFile= or Environment= line can carry a key.
+    check_files += glob.glob(os.path.expanduser("~/.config/systemd/user/*.service"))
+    check_files += glob.glob(os.path.expanduser("~/.config/environment.d/*.conf"))
+    check_files += glob.glob("/etc/systemd/system/aiops-*.service")
+
     for path in check_files:
-        if not os.path.exists(path):
+        if not os.path.isfile(path):
             continue
         try:
             with open(path, errors="ignore") as f:
@@ -129,39 +193,76 @@ def get_exposed_api_keys() -> int:
                     if stripped.startswith("#"):
                         continue
                     for pattern in _API_KEY_FILE_PATTERNS:
-                        if pattern in stripped and "=" in stripped:
-                            val = stripped.split("=", 1)[1].strip().strip('"').strip("'")
-                            if val:
+                        if pattern in stripped and ("=" in stripped or " " in stripped):
+                            tail = stripped.split(pattern, 1)[1].lstrip("=: \t\"'")
+                            if tail and not tail.startswith(("$", "%")):  # not just a var reference
                                 found.add(f"file:{path}:{pattern}")
         except Exception:
             pass
+
+    if _git_tracks_secret_file():
+        found.add("git:tracked-secret-file")
+
     return len(found)
 
 
-_LLM_KEYWORDS = {"openai", "anthropic", "huggingface", "cohere", "mistral",
-                  "together", "replicate", "generativelanguage"}
+# Only hosts that resolve to provider-dedicated or per-zone-anycast IPs.
+# Deliberately excluded because their IPs are shared with huge amounts of
+# unrelated traffic, which would make this check fire on any Google/AWS
+# connection:
+#   generativelanguage.googleapis.com / aiplatform.googleapis.com
+#       -> shared Google front-end ranges (Gmail, Search, YouTube, ...)
+#   bedrock-runtime.*.amazonaws.com
+#       -> shared AWS service ranges
+# A stronger future version would confirm via TLS SNI rather than IP alone.
+_LLM_API_HOSTS = [
+    "api.openai.com", "api.anthropic.com", "api.cohere.ai", "api.cohere.com",
+    "api.mistral.ai", "api.together.xyz", "api.together.ai", "api.replicate.com",
+    "api.perplexity.ai", "api.groq.com", "api.deepseek.com", "api.x.ai",
+    "openrouter.ai", "api-inference.huggingface.co", "huggingface.co",
+]
+
+# ip -> unix ts last resolved. CDN-fronted APIs rotate IPs, and a live
+# connection may sit on an IP that a fresh lookup no longer returns, so we
+# keep a rolling union of everything resolved in the last hour rather than
+# only the current answer.
+_llm_ip_cache: dict = {}
+_LLM_IP_TTL = 3600.0
+
+
+def _known_llm_ips() -> set:
+    now = time.time()
+    for host in _LLM_API_HOSTS:
+        try:
+            for res in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM):
+                _llm_ip_cache[res[4][0]] = now
+        except OSError:
+            pass  # resolution failure for one host shouldn't blank the set
+    for ip in [k for k, ts in _llm_ip_cache.items() if now - ts > _LLM_IP_TTL]:
+        del _llm_ip_cache[ip]
+    return set(_llm_ip_cache)
+
 
 def get_outbound_llm_connections() -> int:
-    """Count established HTTPS connections whose reverse DNS matches an LLM provider."""
+    """Count established connections whose remote IP resolves to a known LLM
+    API host. Replaces the old reverse-DNS match, which failed whenever a
+    provider sat behind Cloudflare/Fastly (PTR says 'cloudflare', not the
+    provider) -- i.e. almost always."""
+    llm_ips = _known_llm_ips()
+    if not llm_ips:
+        return 0
     count = 0
+    culprits = []
     try:
-        conns = psutil.net_connections(kind="inet")
-        remote_ips = {
-            c.raddr.ip for c in conns
-            if c.status == "ESTABLISHED" and c.raddr and c.raddr.port in (80, 443)
-        }
-        for ip in list(remote_ips)[:15]:  # cap to avoid slow DNS hangs
-            try:
-                result = _run(
-                    ["dig", "+short", "+time=1", "+tries=1", "-x", ip],
-                    timeout=3
-                )
-                if any(kw in result.lower() for kw in _LLM_KEYWORDS):
-                    count += 1
-            except Exception:
-                pass
+        for c in psutil.net_connections(kind="inet"):
+            if (c.status == "ESTABLISHED" and c.raddr
+                    and c.raddr.ip in llm_ips and c.raddr.port in (80, 443)):
+                count += 1
+                culprits.append(c.pid)
     except Exception:
-        pass
+        return 0
+    if count:
+        print(f"[AI CHECK] {count} outbound LLM connection(s), pids={culprits}")
     return count
 
 
@@ -200,21 +301,66 @@ def get_shadow_model_count() -> int:
     return count
 
 
+# Region hashed each cycle: [prev_size - _TAMPER_REGION_BYTES, prev_size - _TAMPER_EOF_SKIP].
+# Anchored to the PREVIOUS cycle's EOF (a frozen offset), so a plain append
+# -- which only adds bytes past prev_size -- leaves every byte in the region
+# untouched and the hash identical. _TAMPER_REGION_BYTES (256 KB ~= 3000
+# rows) comfortably spans the last-2000-row window retraining consumes;
+# _TAMPER_EOF_SKIP ignores the final few hundred bytes in case a write was
+# mid-flight at prev_size.
+_TAMPER_REGION_BYTES = 256 * 1024
+_TAMPER_EOF_SKIP     = 4 * 1024
+
+
 def check_training_data_changed() -> int:
-    """Return 1 if the head of the training CSV changed (tampering, not normal appends)."""
+    """Return 1 if the training CSV changed in a way a plain append can't
+    explain: it shrank (truncation / row deletion), or bytes that were
+    already written before last cycle got rewritten (in-place poisoning of
+    the recent window). First cycle only seeds state and returns 0."""
     if not os.path.exists(DATA_FILE):
         return 0
     try:
-        with open(DATA_FILE, "rb") as f:
-            head_hash = hashlib.md5(f.read(102_400)).hexdigest()  # first 100 KB
-    except Exception:
+        size = os.path.getsize(DATA_FILE)
+    except OSError:
         return 0
-    if _prev["training_data_head_hash"] is None:
-        _prev["training_data_head_hash"] = head_hash
-        return 0
-    changed = 1 if head_hash != _prev["training_data_head_hash"] else 0
-    _prev["training_data_head_hash"] = head_hash
-    return changed
+
+    prev_size = _prev["training_data_size"]
+    prev_hash = _prev["training_data_region_hash"]
+
+    # Hash the frozen region defined by the PREVIOUS cycle's EOF.
+    region_hash = None
+    if prev_size is not None and prev_size > _TAMPER_REGION_BYTES + _TAMPER_EOF_SKIP and size >= prev_size:
+        start = prev_size - _TAMPER_REGION_BYTES - _TAMPER_EOF_SKIP
+        try:
+            with open(DATA_FILE, "rb") as f:
+                f.seek(start)
+                region = f.read(_TAMPER_REGION_BYTES)
+            region_hash = hashlib.md5(region).hexdigest()
+        except OSError:
+            region_hash = None
+
+    # Roll state forward: next cycle compares against THIS cycle's EOF.
+    next_hash = None
+    if size > _TAMPER_REGION_BYTES + _TAMPER_EOF_SKIP:
+        start = size - _TAMPER_REGION_BYTES - _TAMPER_EOF_SKIP
+        try:
+            with open(DATA_FILE, "rb") as f:
+                f.seek(start)
+                next_hash = hashlib.md5(f.read(_TAMPER_REGION_BYTES)).hexdigest()
+        except OSError:
+            next_hash = None
+    _prev["training_data_size"] = size
+    _prev["training_data_region_hash"] = next_hash
+
+    if prev_size is None:
+        return 0  # first cycle: seed only
+    if size < prev_size:
+        print(f"[AI-ALERT] Training CSV shrank ({prev_size} -> {size} bytes) — rows removed/truncated")
+        return 1
+    if prev_hash is not None and region_hash is not None and region_hash != prev_hash:
+        print("[AI-ALERT] Training CSV: already-written bytes were rewritten — not a plain append")
+        return 1
+    return 0
 
 
 def check_model_file_age_drift() -> int:
@@ -297,12 +443,25 @@ def detect_ai_packages():
     return len(installed), installed
 
 
+# Third-party AI runtimes only. Guardian's own watchdog/retrain scripts used
+# to be in this list purely to make the dashboard panel non-zero -- but that
+# made ai_processes_running permanently >= 3, which pinned ai_risk_score at
+# <=80 forever (same class of baked-in false positive as the priority
+# watchdog's phantom ssh check). Removed 2026-09-10.
 AI_PROCESS_KEYWORDS = [
     "ollama", "vllm", "llama.cpp", "text-generation-webui", "open-webui",
-    "invokeai", "comfyui", "automatic1111", "stable-diffusion", "transformers",
-    "langchain", "aiops-watchdog-knn.py", "aiops-watchdog-iforest.py",
-    "aiops-watchdog-autoencoder.py",
+    "invokeai", "comfyui", "automatic1111", "stable-diffusion",
+    "text-generation-inference", "lm-studio", "jan.ai", "gpt4all",
 ]
+
+# cmdline substrings that mark a process as Guardian's own -- excluded even
+# if a keyword matches (e.g. a retrain script importing torch).
+_OWN_PROCESS_MARKERS = (
+    "aiops-agents/aiops-watchdog", "aiops-agents/aiops-guardian",
+    "aiops-agents/retrain_recent", "aiops-agents/retrain_common",
+    "aiops-agents/diagnose_anomaly", "aiops-agents/generate_report",
+)
+
 
 def detect_ai_processes():
     matches = []
@@ -311,6 +470,8 @@ def detect_ai_processes():
             name    = proc.info["name"] or ""
             cmdline = " ".join(proc.info["cmdline"] or [])
             haystack = f"{name} {cmdline}".lower()
+            if any(m in haystack for m in _OWN_PROCESS_MARKERS):
+                continue
             for kw in AI_PROCESS_KEYWORDS:
                 if kw.lower() in haystack:
                     matches.append({"pid": proc.info["pid"], "name": name, "match": kw})
@@ -330,40 +491,64 @@ def detect_ai_api_keys():
     return len(found), found
 
 
+# Each risk factor: per-unit points and a cap, so "2 shadow models" and
+# "40 shadow models" no longer score identically, and no single factor can
+# dominate. Binary factors (all-or-nothing conditions) use per_unit == cap.
+# `tools` and `processes` are NOT in here on purpose:
+#   - installed AI packages are context, not runtime risk -> no penalty
+#   - third-party AI runtimes get a small scaled penalty via the
+#     "third_party_ai_processes" factor below (Guardian's own excluded
+#     upstream in detect_ai_processes)
+_RISK_FACTORS = {
+    #  key                        per_unit  cap   binary  detail template
+    "api_keys_in_env":            (8,       16,   False,  "{n} AI API key(s) in this process's environment"),
+    "api_keys_exposed_on_disk":   (15,      30,   False,  "{n} place(s) an AI API key is exposed on disk"),
+    "outbound_llm_connections":   (10,      20,   False,  "{n} active outbound LLM API connection(s)"),
+    "watchdog_ports_external":    (20,      20,   True,   "Watchdog ports reachable from a non-loopback IP"),
+    "shadow_models":              (10,      25,   False,  "{n} model file(s) outside the known model dir"),
+    "training_data_tampered":     (25,      25,   True,   "Training CSV changed in a way a plain append can't explain"),
+    "model_age_drift":            (15,      15,   True,   "Model file timestamp moved with no content change"),
+    "gpu_spike_no_workload":      (12,      12,   True,   "GPU active with no recognized workload"),
+    "third_party_ai_processes":   (4,       12,   False,  "{n} third-party AI runtime process(es) running"),
+}
+
+
 def calculate_ai_risk_score(tools, processes, api_keys,
                              watchdog_external=0, exposed_keys=0, llm_conns=0,
                              shadow_models=0, training_changed=0,
                              model_age_drift=0, gpu_spike=0):
+    """Return (score, factors).
+
+    score  -- 0..100, where 100 means no risk factor is active (a clean host
+              can now actually reach 100; it used to be pinned <=80).
+    factors -- list of {"key", "detail", "points"} for every *active* factor,
+              most points first. `tools` is accepted for signature stability
+              and logged by the caller, but contributes nothing to the score.
+    """
+    counts = {
+        "api_keys_in_env":          api_keys,
+        "api_keys_exposed_on_disk": exposed_keys,
+        "outbound_llm_connections": llm_conns,
+        "watchdog_ports_external":  1 if watchdog_external else 0,
+        "shadow_models":            shadow_models,
+        "training_data_tampered":   1 if training_changed else 0,
+        "model_age_drift":          1 if model_age_drift else 0,
+        "gpu_spike_no_workload":    1 if gpu_spike else 0,
+        "third_party_ai_processes": processes,
+    }
+
+    factors = []
     score = 100
-    reasons = []
-    if tools > 0:
-        score -= 10
-        reasons.append("AI tools installed")
-    if processes > 0:
-        score -= 10
-        reasons.append("AI processes running")
-    if api_keys > 0:
-        score -= 20
-        reasons.append("AI API keys in environment")
-    if exposed_keys > 0:
-        score -= 25
-        reasons.append(f"{exposed_keys} API key(s) exposed in files/env")
-    if llm_conns > 0:
-        score -= 20
-        reasons.append(f"{llm_conns} outbound LLM API connection(s)")
-    if watchdog_external:
-        score -= 15
-        reasons.append("Watchdog ports externally reachable")
-    if shadow_models > 0:
-        score -= 20
-        reasons.append(f"{shadow_models} shadow model file(s) found")
-    if training_changed:
-        score -= 25
-        reasons.append("Training data head modified")
-    if model_age_drift:
-        score -= 20
-        reasons.append("Model file timestamp drifted without content change")
-    if gpu_spike:
-        score -= 20
-        reasons.append("GPU spike with no known workload")
-    return max(score, 0), reasons
+    for key, n in counts.items():
+        if n <= 0:
+            continue
+        per_unit, cap, _binary, template = _RISK_FACTORS[key]
+        points = min(per_unit * n, cap)
+        score -= points
+        detail = template.format(n=n)
+        if per_unit * n > cap:
+            detail += " (capped)"
+        factors.append({"key": key, "detail": detail, "points": points})
+
+    factors.sort(key=lambda f: f["points"], reverse=True)
+    return max(score, 0), factors

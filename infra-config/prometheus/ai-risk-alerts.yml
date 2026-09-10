@@ -1,0 +1,70 @@
+# AI-risk alerting rules (proposed, added 2026-09-10 alongside the
+# guardian_ai_risk.py scoring rework).
+#
+# These are NOT yet live. To deploy: merge this `aiops_ai_risk_alerts`
+# group into /etc/prometheus/rules/aiops-alerts.yml (root-owned, edited
+# with sudo), then reload WITHOUT a restart -- --web.enable-lifecycle is
+# enabled, and a restart risks losing uncompacted TSDB head (see CLAUDE.md):
+#
+#     curl -X POST http://localhost:9090/-/reload
+#
+# Alertmanager still isn't running, so these only show in
+# `curl localhost:9090/api/v1/rules` / the Grafana alerts panel for now --
+# same status as every other rule in aiops-alerts.yml.
+
+groups:
+  - name: aiops_ai_risk_alerts
+    rules:
+      - alert: AIRiskCollectionFailing
+        expr: ai_risk_collection_ok == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI-risk checks have been failing to complete for 15+ minutes"
+          description: "ai_risk_collection_ok has been 0 for 15+ minutes: at least one AI-risk sub-check raised an exception every cycle, so ai_risk_score is computed from stale or default values and cannot be trusted. Check aiops-guardian-health's journal for [AI-ERR] lines naming the failing check. This gauge exists specifically so a broken collector is distinguishable from a genuine all-clear (the same distinction aiops_logs_query_ok draws for the log watchdog)."
+
+      - alert: AITrainingDataTampered
+        expr: ai_training_data_hash_changed == 1
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Guardian training CSV changed in a way a plain append can't explain"
+          description: "check_training_data_changed() flagged aiops_data/metrics.csv: either the file shrank (rows truncated/removed) or bytes written before the previous cycle were rewritten in place. Normal operation is append-only via aiops-watchdog-ml, so this indicates the retrain window was edited -- possible data poisoning ahead of the next retrain_recent* run. Do not retrain until the cause is understood; inspect recent writers and the file's tail."
+
+      - alert: AIRiskScoreLow
+        expr: ai_risk_score <= 55
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI risk score has been {{ $value }} for 15+ minutes"
+          description: "ai_risk_score has sat at or below 55 for 15+ minutes. After the 2026-09-10 rework a clean host scores 100, and a developer's own Claude Code session (outbound LLM connections, capped -20) bottoms out around 80 -- so <=55 means at least one further real factor is active (exposed keys, shadow models, watchdog ports externally reachable, GPU spike, model drift). Break it down with ai_risk_reason{reason=...}, which carries the points each factor is currently deducting."
+
+      - alert: AIExposedApiKeysOnDisk
+        expr: ai_exposed_api_keys > 0
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "{{ $value }} place(s) an AI API key is exposed on disk"
+          description: "get_exposed_api_keys() found an AI provider key in a shell dotfile, ~/.config, ~/.netrc, a systemd unit Environment=/EnvironmentFile= line, or a repo .env -- or a .env/secrets file is tracked in git. Rotate the key, move it to a non-committed secret store, and confirm .gitignore covers .env."
+
+      - alert: AIShadowModelFiles
+        expr: ai_shadow_model_count > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} model file(s) found outside the known model directory"
+          description: "get_shadow_model_count() found .pkl/.pt/.onnx/.h5/.safetensors files in /tmp, /dev/shm, /var/tmp or under $HOME outside the known model dir and the allow-listed project subtrees. Could be a stray experiment or an unsanctioned model drop; verify provenance and remove or relocate."
+
+      - alert: AICheckStale
+        expr: time() - ai_check_last_success_timestamp > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI-risk sub-check '{{ $labels.check }}' hasn't succeeded in 30+ minutes"
+          description: "ai_check_last_success_timestamp for check={{ $labels.check }} is more than 30 minutes old. The expensive checks (outbound_llm_connections, shadow_model_scan) only run every 20 cycles (~10 min), so a 30-minute gap means they have been failing rather than merely waiting their turn. Cross-check with AIRiskCollectionFailing and the [AI-ERR] journal lines."
