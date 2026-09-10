@@ -16,6 +16,7 @@
         }
       ]
     },
+    "description": "2026-09-10: AI DETECTION row reworked to match guardian_ai_risk.py scoring changes.",
     "editable": true,
     "fiscalYearStartMonth": 0,
     "graphTooltip": 0,
@@ -3260,28 +3261,6 @@
         "id": 110,
         "panels": [
           {
-            "gridPos": {
-              "h": 4,
-              "w": 8,
-              "x": 0,
-              "y": 3
-            },
-            "id": 31,
-            "options": {
-              "code": {
-                "language": "plaintext",
-                "showLineNumbers": false,
-                "showMiniMap": false
-              },
-              "content": "\n\n\n\ud83d\udea8 AI Risk Posture: Moderate\n\nAI activity detected.          \nControls incomplete.\n\n",
-              "mode": "markdown"
-            },
-            "pluginVersion": "13.1.0",
-            "targets": [],
-            "title": "",
-            "type": "text"
-          },
-          {
             "datasource": {
               "type": "prometheus",
               "uid": "depci0ud1uscga"
@@ -3464,8 +3443,8 @@
             "fieldConfig": {
               "defaults": {
                 "color": {
-                  "mode": "fixed",
-                  "fixedColor": "text"
+                  "fixedColor": "text",
+                  "mode": "fixed"
                 },
                 "thresholds": {
                   "mode": "absolute",
@@ -3659,28 +3638,6 @@
             ],
             "title": "API Keys in Exporter Env",
             "type": "stat"
-          },
-          {
-            "gridPos": {
-              "h": 5,
-              "w": 16,
-              "x": 0,
-              "y": 11
-            },
-            "id": 33,
-            "options": {
-              "code": {
-                "language": "plaintext",
-                "showLineNumbers": false,
-                "showMiniMap": false
-              },
-              "content": "  \u2022 AI tools detected  \n  \u2022 Active AI processes running  \n  \u2022 Controls incomplete  \n\nScore reflects exposure and control gaps.",
-              "mode": "markdown"
-            },
-            "pluginVersion": "13.1.0",
-            "targets": [],
-            "title": " AI Risk Factors",
-            "type": "text"
           },
           {
             "datasource": {
@@ -4135,44 +4092,26 @@
             "type": "stat"
           },
           {
-            "id": 200,
-            "type": "timeseries",
-            "title": "AI Risk Score \u2014 history",
             "datasource": {
               "type": "prometheus",
               "uid": "depci0ud1uscga"
             },
-            "gridPos": {
-              "x": 0,
-              "y": 24,
-              "w": 18,
-              "h": 8
-            },
-            "targets": [
-              {
-                "datasource": {
-                  "type": "prometheus",
-                  "uid": "depci0ud1uscga"
-                },
-                "expr": "ai_risk_score",
-                "refId": "A",
-                "legendFormat": "risk score"
-              }
-            ],
             "fieldConfig": {
               "defaults": {
-                "unit": "none",
-                "min": 0,
-                "max": 100,
+                "color": {
+                  "mode": "thresholds"
+                },
                 "custom": {
                   "drawStyle": "line",
-                  "lineInterpolation": "stepAfter",
                   "fillOpacity": 12,
+                  "lineInterpolation": "stepAfter",
                   "lineWidth": 2,
                   "pointSize": 5,
                   "showPoints": "never",
                   "spanNulls": true
                 },
+                "max": 100,
+                "min": 0,
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -4194,12 +4133,17 @@
                     }
                   ]
                 },
-                "color": {
-                  "mode": "thresholds"
-                }
+                "unit": "none"
               },
               "overrides": []
             },
+            "gridPos": {
+              "h": 8,
+              "w": 18,
+              "x": 0,
+              "y": 24
+            },
+            "id": 200,
             "options": {
               "legend": {
                 "showLegend": false
@@ -4207,21 +4151,6 @@
               "tooltip": {
                 "mode": "single"
               }
-            }
-          },
-          {
-            "id": 201,
-            "type": "stat",
-            "title": "AI-Risk Checks Collecting",
-            "datasource": {
-              "type": "prometheus",
-              "uid": "depci0ud1uscga"
-            },
-            "gridPos": {
-              "x": 18,
-              "y": 24,
-              "w": 6,
-              "h": 8
             },
             "targets": [
               {
@@ -4229,26 +4158,39 @@
                   "type": "prometheus",
                   "uid": "depci0ud1uscga"
                 },
-                "expr": "ai_risk_collection_ok",
+                "expr": "ai_risk_score",
+                "legendFormat": "risk score",
                 "refId": "A"
               }
             ],
-            "options": {
-              "reduceOptions": {
-                "calcs": [
-                  "lastNotNull"
-                ],
-                "fields": "",
-                "values": false
-              },
-              "orientation": "auto",
-              "textMode": "auto",
-              "colorMode": "background",
-              "graphMode": "none",
-              "justifyMode": "auto"
+            "title": "AI Risk Score \u2014 history",
+            "type": "timeseries"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "depci0ud1uscga"
             },
             "fieldConfig": {
               "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "red",
+                        "text": "CHECKS FAILING"
+                      },
+                      "1": {
+                        "color": "green",
+                        "text": "OK"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ],
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
@@ -4262,42 +4204,68 @@
                     }
                   ]
                 },
-                "mappings": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "CHECKS FAILING",
-                        "color": "red"
-                      },
-                      "1": {
-                        "text": "OK",
-                        "color": "green"
-                      }
-                    }
-                  }
-                ],
-                "unit": "none",
-                "color": {
-                  "mode": "thresholds"
-                }
+                "unit": "none"
               },
               "overrides": []
-            }
+            },
+            "gridPos": {
+              "h": 8,
+              "w": 6,
+              "x": 18,
+              "y": 24
+            },
+            "id": 201,
+            "options": {
+              "colorMode": "background",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "textMode": "auto"
+            },
+            "targets": [
+              {
+                "datasource": {
+                  "type": "prometheus",
+                  "uid": "depci0ud1uscga"
+                },
+                "expr": "ai_risk_collection_ok",
+                "refId": "A"
+              }
+            ],
+            "title": "AI-Risk Checks Collecting",
+            "type": "stat"
           },
           {
-            "id": 202,
-            "type": "table",
-            "title": "Active Risk Factors (why the score is down)",
             "datasource": {
               "type": "prometheus",
               "uid": "depci0ud1uscga"
             },
+            "fieldConfig": {
+              "defaults": {
+                "custom": {
+                  "align": "auto"
+                },
+                "unit": "none"
+              },
+              "overrides": []
+            },
             "gridPos": {
-              "x": 0,
-              "y": 32,
+              "h": 8,
               "w": 12,
-              "h": 8
+              "x": 0,
+              "y": 32
+            },
+            "id": 202,
+            "options": {
+              "cellHeight": "sm",
+              "showHeader": true
             },
             "targets": [
               {
@@ -4306,11 +4274,12 @@
                   "uid": "depci0ud1uscga"
                 },
                 "expr": "ai_risk_reason > 0",
-                "refId": "A",
                 "format": "table",
-                "instant": true
+                "instant": true,
+                "refId": "A"
               }
             ],
+            "title": "Active Risk Factors (why the score is down)",
             "transformations": [
               {
                 "id": "organize",
@@ -4318,12 +4287,12 @@
                   "excludeByName": {
                     "Time": true,
                     "__name__": true,
-                    "job": true,
-                    "instance": true
+                    "instance": true,
+                    "job": true
                   },
                   "renameByName": {
-                    "reason": "Factor",
-                    "Value": "Points deducted"
+                    "Value": "Points deducted",
+                    "reason": "Factor"
                   }
                 }
               },
@@ -4333,40 +4302,39 @@
                   "fields": "",
                   "sort": [
                     {
-                      "field": "Value",
-                      "desc": true
+                      "desc": true,
+                      "field": "Value"
                     }
                   ]
                 }
               }
             ],
-            "fieldConfig": {
-              "defaults": {
-                "unit": "none",
-                "custom": {
-                  "align": "auto"
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "showHeader": true,
-              "cellHeight": "sm"
-            }
+            "type": "table"
           },
           {
-            "id": 203,
-            "type": "table",
-            "title": "Sub-check Freshness (seconds since last success)",
             "datasource": {
               "type": "prometheus",
               "uid": "depci0ud1uscga"
             },
+            "fieldConfig": {
+              "defaults": {
+                "custom": {
+                  "align": "auto"
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
             "gridPos": {
-              "x": 12,
-              "y": 32,
+              "h": 8,
               "w": 12,
-              "h": 8
+              "x": 12,
+              "y": 32
+            },
+            "id": 203,
+            "options": {
+              "cellHeight": "sm",
+              "showHeader": true
             },
             "targets": [
               {
@@ -4375,11 +4343,12 @@
                   "uid": "depci0ud1uscga"
                 },
                 "expr": "time() - ai_check_last_success_timestamp",
-                "refId": "A",
                 "format": "table",
-                "instant": true
+                "instant": true,
+                "refId": "A"
               }
             ],
+            "title": "Sub-check Freshness (seconds since last success)",
             "transformations": [
               {
                 "id": "organize",
@@ -4387,12 +4356,12 @@
                   "excludeByName": {
                     "Time": true,
                     "__name__": true,
-                    "job": true,
-                    "instance": true
+                    "instance": true,
+                    "job": true
                   },
                   "renameByName": {
-                    "check": "Sub-check",
-                    "Value": "Age (s)"
+                    "Value": "Age (s)",
+                    "check": "Sub-check"
                   }
                 }
               },
@@ -4402,26 +4371,14 @@
                   "fields": "",
                   "sort": [
                     {
-                      "field": "Value",
-                      "desc": true
+                      "desc": true,
+                      "field": "Value"
                     }
                   ]
                 }
               }
             ],
-            "fieldConfig": {
-              "defaults": {
-                "unit": "s",
-                "custom": {
-                  "align": "auto"
-                }
-              },
-              "overrides": []
-            },
-            "options": {
-              "showHeader": true,
-              "cellHeight": "sm"
-            }
+            "type": "table"
           }
         ],
         "title": "AI DETECTION",
@@ -5712,9 +5669,8 @@
     "timezone": "browser",
     "title": "AI Anomaly Detection",
     "uid": "ad6lc4j",
-    "version": 199,
-    "description": "2026-09-10: AI DETECTION row reworked to match guardian_ai_risk.py scoring changes."
+    "version": 200
   },
   "overwrite": true,
-  "message": "AI DETECTION row: fix thresholds, add score history + reasons/freshness tables (2026-09-10)"
+  "message": "AI DETECTION row: fix thresholds, add score history + reasons/freshness tables, drop stale text panels (2026-09-10)"
 }
