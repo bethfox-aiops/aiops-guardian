@@ -154,11 +154,20 @@ CRITICAL_SERVICES = ["RpcSs", "EventLog", "Dnscache", "LanmanWorkstation"]
 
 
 def check_services(instance):
-    """Healthy if all CRITICAL_SERVICES are running."""
+    """Healthy if all CRITICAL_SERVICES are running.
+
+    edge_site="" is required here, unlike check_cpu/check_mem/check_disk:
+    this is the one check of the four that counts matching series rather
+    than averaging or dict-keying by instance, so the edge-forwarded
+    duplicate of each service (edge_site="guardian-proto-1") silently
+    doubled the count on any host also scraped via the Pi -- 8 matching
+    series instead of 4, permanently failing this check on that host
+    even though all four services were genuinely running.
+    """
     names = "|".join(CRITICAL_SERVICES)
     running = prom_query_by_instance(
         f'count by (instance) (windows_service_state{{job="{JOB}",instance="{instance}",'
-        f'name=~"{names}",state="running"}} == 1)'
+        f'name=~"{names}",state="running",edge_site=""}} == 1)'
     )
     return running.get(instance, 0) == len(CRITICAL_SERVICES)
 
