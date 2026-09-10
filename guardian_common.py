@@ -45,10 +45,19 @@ _prev = {
     "world_writable": 0,
     "pkg_failures": 0,
     # AI risk state
-    "training_data_head_hash": None,
+    # training-data tamper detection (rewritten 2026-09-10). The old
+    # first-100KB head hash never changed under normal append-only writes,
+    # so poisoning the recent retrain window went unseen. Now: each cycle we
+    # re-hash the byte region that ended just before *last* cycle's EOF
+    # (frozen offset, so plain appends leave it byte-identical) and compare
+    # to last cycle's hash; a mismatch means bytes that were already written
+    # got rewritten. `training_data_size` also catches truncation.
+    "training_data_size": None,
+    "training_data_region_hash": None,
     "model_age_mtimes": {},
     "model_age_hashes": {},
     "shadow_model_count": 0,
+    "llm_conns": 0,
 }
 
 

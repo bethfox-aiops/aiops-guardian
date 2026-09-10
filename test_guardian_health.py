@@ -201,31 +201,156 @@ class TestScoreSecurityBase:
 
 
 class TestCalculateAiRiskScore:
+    """calculate_ai_risk_score() returns (score, factors) where factors is a
+    list of {"key", "detail", "points"} for each *active* risk factor. The
+    2026-09-10 rewrite made three behavioural changes covered here:
+      - `tools` (installed packages) and Guardian's own processes no longer
+        cost points, so a clean host can actually reach 100
+      - penalties scale with count and cap, instead of a flat if-nonzero
+      - factors carry a stable `key` (drives the ai_risk_reason metric)
+    """
+
+    def _details(self, factors):
+        return [f["detail"] for f in factors]
+
     def test_no_risk_factors_returns_100(self):
-        score, reasons = gh.calculate_ai_risk_score(
+        score, factors = gh.calculate_ai_risk_score(
             tools=0, processes=0, api_keys=0, watchdog_external=0,
             exposed_keys=0, llm_conns=0, shadow_models=0,
             training_changed=0, model_age_drift=0, gpu_spike=0,
         )
         assert score == 100
-        assert reasons == []
+        assert factors == []
+
+    def test_installed_tools_are_informational_only(self):
+        # Regression: installed AI packages used to cost -10 and, with
+        # Guardian's own deps always present, permanently pinned the score
+        # at <= 80. `tools` must now contribute nothing.
+        score, factors = gh.calculate_ai_risk_score(
+            tools=9, processes=0, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=0,
+            training_changed=0, model_age_drift=0, gpu_spike=0,
+        )
+        assert score == 100
+        assert factors == []
 
     def test_single_risk_factor_deducts_correctly(self):
-        score, reasons = gh.calculate_ai_risk_score(
+        score, factors = gh.calculate_ai_risk_score(
             tools=0, processes=0, api_keys=0, watchdog_external=0,
             exposed_keys=0, llm_conns=0, shadow_models=1,
             training_changed=0, model_age_drift=0, gpu_spike=0,
         )
-        assert score == 80  # shadow_models > 0 costs 20 points
-        assert reasons == ["1 shadow model file(s) found"]
+        assert score == 90  # 1 shadow model * 10 pts/unit
+        assert self._details(factors) == ["1 model file(s) outside the known model dir"]
+        assert factors[0]["key"] == "shadow_models"
+
+    def test_penalty_scales_with_count(self):
+        score, factors = gh.calculate_ai_risk_score(
+            tools=0, processes=0, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=2,
+            training_changed=0, model_age_drift=0, gpu_spike=0,
+        )
+        assert score == 80  # 2 * 10, still under the cap
+
+    def test_penalty_caps_and_is_marked(self):
+        # shadow_models cap is 25; 4 * 10 = 40 would blow past it.
+        score, factors = gh.calculate_ai_risk_score(
+            tools=0, processes=0, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=4,
+            training_changed=0, model_age_drift=0, gpu_spike=0,
+        )
+        assert score == 75  # 100 - 25 (capped), not 100 - 40
+        assert factors[0]["points"] == 25
+        assert "(capped)" in factors[0]["detail"]
+
+    def test_third_party_processes_scale_and_cap(self):
+        # processes DO still cost points (third-party AI runtimes), scaled
+        # 4/unit, cap 12 -- Guardian's own are filtered out upstream.
+        score_one, _ = gh.calculate_ai_risk_score(
+            tools=0, processes=1, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=0,
+            training_changed=0, model_age_drift=0, gpu_spike=0,
+        )
+        score_many, _ = gh.calculate_ai_risk_score(
+            tools=0, processes=10, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=0,
+            training_changed=0, model_age_drift=0, gpu_spike=0,
+        )
+        assert score_one == 96      # -4
+        assert score_many == 88     # -12 (capped), not -40
+
+    def test_factors_sorted_by_points_descending(self):
+        _, factors = gh.calculate_ai_risk_score(
+            tools=0, processes=1, api_keys=0, watchdog_external=0,
+            exposed_keys=0, llm_conns=0, shadow_models=0,
+            training_changed=1, model_age_drift=0, gpu_spike=0,
+        )
+        points = [f["points"] for f in factors]
+        assert points == sorted(points, reverse=True)
+        assert factors[0]["key"] == "training_data_tampered"  # 25 > 4
 
     def test_score_never_goes_below_zero(self):
-        score, reasons = gh.calculate_ai_risk_score(
+        score, factors = gh.calculate_ai_risk_score(
             tools=1, processes=1, api_keys=1, watchdog_external=1,
             exposed_keys=1, llm_conns=1, shadow_models=1,
             training_changed=1, model_age_drift=1, gpu_spike=1,
         )
-        # Deductions here add up to well over 100 -- score must floor at 0,
-        # never go negative.
+        # Deductions here add up to well over 100 -- score must floor at 0.
         assert score == 0
-        assert len(reasons) == 10
+        # 9 active factors: every input except `tools`, which is informational.
+        assert len(factors) == 9
+        assert all(f["points"] > 0 for f in factors)
+
+
+class TestCheckTrainingDataChanged:
+    """Covers the 2026-09-10 rewrite of check_training_data_changed(). The
+    old version hashed the first 100 KB, which never changes under normal
+    append-only writes; the new one hashes a byte region frozen at the
+    previous cycle's EOF, so a plain append leaves it identical but an
+    in-place rewrite of already-written rows (retrain-window poisoning) or
+    a truncation is caught."""
+
+    @pytest.fixture
+    def csv(self, tmp_path, monkeypatch):
+        import guardian_ai_risk as air
+        p = tmp_path / "metrics.csv"
+        # ~290 KB so prev_size clears the 260 KB region+skip threshold.
+        rows = [
+            f"2026-09-10T{i // 3600:02d}:{(i // 60) % 60:02d}:{i % 60:02d}"
+            f".000000,{i},1.0,2.0,3.0,4.0,5.0,6.0,0.0,0.0,0.0\n"
+            for i in range(7000)
+        ]
+        p.write_text("".join(rows))
+        monkeypatch.setattr(air, "DATA_FILE", str(p))
+        monkeypatch.setitem(air._prev, "training_data_size", None)
+        monkeypatch.setitem(air._prev, "training_data_region_hash", None)
+        return p, air
+
+    def test_first_call_only_seeds(self, csv):
+        p, air = csv
+        assert air.check_training_data_changed() == 0
+
+    def test_plain_appends_are_not_flagged(self, csv):
+        p, air = csv
+        air.check_training_data_changed()  # seed
+        for batch in range(3):
+            with p.open("a") as f:
+                for i in range(7000 + batch * 50, 7050 + batch * 50):
+                    f.write(f"2026-09-11T00:00:{i % 60:02d}.0,{i},1,2,3,4,5,6,0,0,0\n")
+            assert air.check_training_data_changed() == 0
+
+    def test_in_place_rewrite_is_flagged(self, csv):
+        p, air = csv
+        air.check_training_data_changed()  # seed
+        lines = p.read_bytes().split(b"\n")
+        idx = len(lines) - 1000  # ~1000 rows from EOF -> inside the frozen region
+        lines[idx] = b"9" * len(lines[idx])  # same length -> true in-place edit
+        p.write_bytes(b"\n".join(lines))
+        assert air.check_training_data_changed() == 1
+
+    def test_truncation_is_flagged(self, csv):
+        p, air = csv
+        air.check_training_data_changed()  # seed
+        data = p.read_bytes()
+        p.write_bytes(data[: len(data) // 2])
+        assert air.check_training_data_changed() == 1
