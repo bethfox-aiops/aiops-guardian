@@ -143,6 +143,17 @@ Prometheus instance every current dashboard already queries) but **no
 dashboard/panel built for it yet** — deliberately out of scope for M1,
 which only had to prove the forwarding path.
 
+**Update (2026-09-10): second host added to the Pi's scrape config.**
+`guardian-proto-1`'s `windows-node` job now also scrapes
+`DESKTOP-503POVP:9182`, so both Windows hosts flow through the edge path,
+not just the one M1 proved with. Targets are by hostname
+(`DESKTOP-0AJUKU3:9182`, `DESKTOP-503POVP:9182`), not IP — the Pi can
+resolve both via the router's DNS/`search home` domain, confirmed with
+`getent hosts`, so there was no need to hardcode an IP the way the
+original M1 target was (`192.168.254.108:9182`); that original IP-based
+target was switched over to the hostname at the same time, for the same
+DHCP-fragility reason.
+
 **Security note carried forward from this change:** Guardian Core's port
 9090 is `ufw ALLOW IN Anywhere` (not scoped to the Pi's IP, unlike the
 narrower pattern used elsewhere in this repo for exactly this reason) —
@@ -220,6 +231,39 @@ Prompted by the Pi (`guardian-proto-1`) being SSH-unreachable that day —
 this work is independent of Pi access (a locally-run PowerShell script,
 nothing Pi-related), so it made sense to pick up while blocked there.
 
+**Status update (2026-09-10): deployed to both Windows hosts.** Both
+`guardian_disk_health.ps1` and `guardian_process_attribution.ps1` are now
+running on `DESKTOP-0AJUKU3` and `DESKTOP-503POVP` (a second Windows
+host added to the environment that day), each via a 15-minute Scheduled
+Task (`SYSTEM`/highest privilege), confirmed live in Guardian Core's
+Prometheus (`windows_disk_health_collector_last_run_timestamp_seconds`,
+`windows_process_attribution_collector_last_run_timestamp_seconds`,
+`windows_top_process_{cpu,mem}_percent`, `windows_disk_reliability_*`
+all present for both instances). `DESKTOP-503POVP` needed a different
+deployment path than `DESKTOP-0AJUKU3`'s CLI-flag `sc.exe config`: that
+host's `windows_exporter` service was already using
+`--config.file="C:\Program Files\windows_exporter\config.yaml"`, so the
+`textfile` collector was enabled via that YAML file instead (note the
+schema mismatch vs. the CLI flag name: the YAML key is
+`collector.textfile.directories`, plural/list, not `directory`,
+singular/string). Also closes out M4 step 1 below for both hosts.
+
+**Remote access note (2026-09-10):** deploying to `DESKTOP-503POVP`
+exposed that it had no remote-admin path at all — RDP host mode isn't
+available on Windows Home, and it wasn't SSH-reachable. Fixed by
+installing the OpenSSH Server optional feature (available on Home,
+unlike RDP), key-based auth only via
+`C:\ProgramData\ssh\administrators_authorized_keys` (the
+`Owner` account is a local admin, which requires this specific file
+rather than the usual per-user `authorized_keys`), firewall rule scoped
+to the LAN subnet rather than any-source, and `PasswordAuthentication no`
+set only after key-based login was confirmed working. Also fixed the
+network being categorized `Public` rather than `Private` in Windows'
+connection profile, which had been silently making the firewall rule
+inapplicable regardless of its explicit scope. `~/.ssh/config` on
+Guardian Core now has a `desktop-503povp` alias alongside
+`guardian-proto-1`.
+
 **Milestone 3 — write exactly one endpoint capability.** Not "the agent" —
 one capability (e.g. "return running processes"). Prove the concept before
 generalizing.
@@ -238,6 +282,8 @@ Ordered, each step depends on the one before it:
 1. **Deploy + verify `guardian_process_attribution.ps1` on a real Windows
    host.** Written 2026-08-26, never run — no PowerShell runtime existed to
    syntax-check it against. Closes out before adding more surface on top.
+   **Done (2026-09-10)** — see the status update above; deployed and
+   verified on both `DESKTOP-0AJUKU3` and `DESKTOP-503POVP`.
 2. **Design the push payload.** Small schema decision needed before any
    code: JSON over HTTP POST (simple, host-agnostic) vs. the endpoint
    speaking Prometheus `remote_write` itself (heavier, but reuses the
