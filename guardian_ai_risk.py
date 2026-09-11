@@ -335,7 +335,7 @@ def check_training_data_changed() -> int:
             with open(DATA_FILE, "rb") as f:
                 f.seek(start)
                 region = f.read(_TAMPER_REGION_BYTES)
-            region_hash = hashlib.md5(region).hexdigest()
+            region_hash = hashlib.sha256(region).hexdigest()
         except OSError:
             region_hash = None
 
@@ -346,7 +346,7 @@ def check_training_data_changed() -> int:
         try:
             with open(DATA_FILE, "rb") as f:
                 f.seek(start)
-                next_hash = hashlib.md5(f.read(_TAMPER_REGION_BYTES)).hexdigest()
+                next_hash = hashlib.sha256(f.read(_TAMPER_REGION_BYTES)).hexdigest()
         except OSError:
             next_hash = None
     _prev["training_data_size"] = size

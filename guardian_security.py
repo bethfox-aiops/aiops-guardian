@@ -167,19 +167,18 @@ def check_cron_changed() -> int:
 
 
 def _hash_systemd_units() -> str:
+    """Hash each unit file's actual content (fixed 2026-09-11) -- the
+    previous version hashed filename+mtime only, so an edit followed by a
+    mtime-preserving write (`touch -d`, or any tool that restores original
+    timestamps) would leave the recorded hash unchanged and slip past
+    check_systemd_units_changed() entirely."""
     d = "/etc/systemd/system"
     try:
-        parts = []
-        for f in sorted(os.listdir(d)):
-            if f.endswith(".service"):
-                try:
-                    mtime = os.path.getmtime(os.path.join(d, f))
-                    parts.append(f"{f}:{mtime}")
-                except Exception:
-                    parts.append(f)
-        return _hash_string("|".join(parts))
+        files = sorted(f for f in os.listdir(d) if f.endswith(".service"))
     except Exception:
         return ""
+    combined = "|".join(f"{f}:{_hash_file(os.path.join(d, f))}" for f in files)
+    return _hash_string(combined)
 
 
 def check_systemd_units_changed() -> int:

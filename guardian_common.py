@@ -66,15 +66,21 @@ _prev = {
 # ════════════════════════════════════════════════════════════════════════════
 
 def _hash_file(path: str) -> str:
+    # SHA-256, not MD5 (switched 2026-09-11): these hashes are the evidence
+    # behind every change-detection check in guardian_security.py /
+    # guardian_ai_risk.py (SSH keys, cron, systemd units, model files,
+    # training data). MD5's broken collision resistance means a
+    # sufficiently motivated attacker could craft a modified file that
+    # hashes the same as the original, slipping past the check entirely.
     try:
         with open(path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()
+            return hashlib.sha256(f.read()).hexdigest()
     except Exception:
         return ""
 
 
 def _hash_string(s: str) -> str:
-    return hashlib.md5(s.encode()).hexdigest()
+    return hashlib.sha256(s.encode()).hexdigest()
 
 
 def _run(cmd, timeout=15) -> str:
