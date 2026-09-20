@@ -89,6 +89,79 @@ surfacing rather than silently leaving out.
 Updated rollup: 30 Satisfied, 22 Partial, 0 Planned, 0 Gap, 20 Not
 applicable.
 
+**Stage 6 (targeted refresh), 2026-09-20:** 46 days since the last full
+pass -- not a blind re-check of all 72 (most cited evidence is unchanged
+code/docs that a full re-run would just reconfirm), but every row touched
+below is tied to a real, specific thing that happened since 8/5, verified
+against current code/metrics, not assumed. No row's **status** changed in
+this pass; several earned materially stronger evidence, and one (MANAGE
+4.3) needed an honestly harder note, not a better one.
+
+- **MEASURE 1.2, 2.6, 2.9** — the `guardian_ai_risk.py` scoring rework
+  (2026-09-10/11) is real new evidence on three fronts at once: metrics
+  genuinely reassessed in response to a found flaw (not on a cadence,
+  still 1.2's gap), a new `ai_risk_collection_ok` gauge + `safe_check()`
+  wrapper that distinguishes a failed check from a verified-clean one
+  (2.6 — the model-file-crash-loop gap it doesn't touch is still open,
+  so still 🟡), and `ai_risk_reason{reason=<key>}=<points>` explaining
+  *why* the score is what it is, the same pattern `behavioral_policy.py`
+  already earned 2.9 credit for.
+- **MEASURE 2.7 / GOVERN 4.1** — three more concrete "found a real gap,
+  fixed it" instances since 8/5: MD5→SHA-256 across every integrity hash
+  (MD5's broken collision resistance was a real, if narrow, weakness),
+  the systemd-unit check fixed from filename+mtime (spoofable) to actual
+  content, and the Alertmanager finding below. Reinforces both rows'
+  existing ✅, doesn't need to raise it further.
+- **MEASURE 3.2** — DESKTOP-0AJUKU3 (the same host this row already
+  tracks) crashed again, 2026-09-14/15, with new, specific proxy evidence
+  this time: `guardian_disk_health.ps1` caught a real Event ID 153 (I/O
+  device error) in the 24h before the crash, and disk busy% spiked from
+  ~0.5% to 32% in the last sample before it went dark — the same *kind*
+  of proxy signal the row already cites, now with a third real occurrence
+  behind it.
+- **MANAGE 4.1 — sharper, not just reinforced.** This host itself
+  suspended for ~65 hours (2026-09-11 22:14 UTC → 2026-09-14 22:04 UTC).
+  For that entire window Prometheus, Alertmanager, and every watchdog
+  were simply not running — not degraded, not silent-but-alive, off.
+  Nothing could have noticed a real incident during that window, because
+  the thing that notices things was itself asleep. Found by accident
+  (an unrelated question about a Windows host), not by any Guardian
+  mechanism. The row's existing "strong on monitoring" framing didn't
+  have language for this failure mode at all; it does now.
+- **MANAGE 4.3 — the honest finding this stage exists to catch.** The row
+  reads "Alertmanager → Slack, reaching the one operator that exists."
+  Discovered 2026-09-20: `alertmanager_notifications_failed_total{integration="slack"}`
+  showed 234 of 367 send attempts (64%) had been failing since the service
+  started (2026-08-26), silently, nothing in the journal. Root cause:
+  `.CommonAnnotations` renders empty whenever a group holds more than one
+  alert with per-instance text (confirmed live: `WindowsHostUnreachable`
+  grouped across both Windows hosts, two distinct summaries, empty common
+  text, Slack rejects an empty message) — and that's exactly why
+  DESKTOP-0AJUKU3's 11-hour outage on 9/15 never reached Slack. Fixed the
+  same day (template now renders per-alert). The mechanism existing is not
+  the same claim as the mechanism working, and for three weeks it was the
+  former without the latter. Still 🟡 — arguably this is *why* it was
+  never ✅ — but the note now says what actually happened instead of what
+  was assumed to be happening.
+- **MANAGE 2.3** — two more real "unknown risk discovered, responded to
+  same day" instances since 8/5: the `ai_risk_score` baseline-pinning bug
+  and the Alertmanager finding immediately above. Reinforces existing ✅.
+- **Correction to this stage's own first draft:** initially carried
+  forward the 2026-08-05 note that the reboot/suspend-triggered ML-drift
+  incidents and the autoencoder threshold recalibration were still
+  undocumented. Re-checked against `OPERATIONS_MANUAL.md` directly rather
+  than trusting the earlier note, and they're not — Chapter 10.1 already
+  covers both in real detail (dated 2026-08-03/-04: the GPU-memory
+  step-change root cause, the suspend/resume false-positive signature,
+  the threshold's move to the 99th percentile). The 8/5 note was already
+  stale by the time this stage started; repeating it uncorrected would
+  have been exactly the kind of unverified claim this document exists to
+  avoid.
+
+Rollup unchanged this stage: 30 Satisfied, 22 Partial, 0 Planned, 0 Gap,
+20 Not applicable — every row above kept its letter grade; what changed
+is how honestly the notes describe it.
+
 ## Three-layer view (for different audiences)
 
 | NIST Outcome (executive) | Guardian Capability (architect) | Technical Implementation (engineer) |
@@ -118,7 +191,7 @@ applicable.
 | 2.3 | Operator approves AI-driven changes interactively | Every session's approval pattern; `aiops-approval.service` | 🟡 | Real but informal — one person acting as both "leadership" and operator. |
 | 3.1 | N/A — no team | — | ⚪ | |
 | 3.2 | Human-oversight pattern for AI actions | `aiops-approval.service`; this session's own "ask before risky actions" practice, now also written down in `GOVERNANCE_POLICIES.md`'s risk-tolerance framework | 🟡 | Real mechanism, and now partly written down (2026-08-05) — but `GOVERNANCE_POLICIES.md` is about risk tolerance broadly, not a dedicated human-AI role-boundary policy, so still short of a formal match. |
-| 4.1 | Safety-first mindset practiced, not just documented | `GOVERNANCE_POLICIES.md`'s Risk Tolerance Statement (the sudoers-symlink decline, made specifically to protect the infrastructure Guardian's own AI-driven tooling depends on); the automated model-archiving mechanism that made the 2026-08-04 bad-iForest-retrain trivially recoverable | ✅ | Upgraded 2026-08-05 — `VISION.md`'s narrow-scope section was real but design-doc-only; this is the same safety-first thinking demonstrated in actual AI-system decisions and a real caught mistake, not just stated intent. |
+| 4.1 | Safety-first mindset practiced, not just documented | `GOVERNANCE_POLICIES.md`'s Risk Tolerance Statement (the sudoers-symlink decline, made specifically to protect the infrastructure Guardian's own AI-driven tooling depends on); the automated model-archiving mechanism that made the 2026-08-04 bad-iForest-retrain trivially recoverable; the 2026-09-11 MD5→SHA-256 integrity-hash upgrade, done proactively rather than in response to an exploit | ✅ | Upgraded 2026-08-05 — `VISION.md`'s narrow-scope section was real but design-doc-only; this is the same safety-first thinking demonstrated in actual AI-system decisions and a real caught mistake, not just stated intent. Reinforced 2026-09-20. |
 | 4.2 | Risks/impacts documented and communicated publicly | `OPERATIONS_MANUAL.md` Ch. 10 (Known Gaps), `ROADMAP.md`'s self-critique sections, public LinkedIn posts about real incidents | ✅ | Unusually well covered — publicly documented, not just internally. |
 | 4.3 | Testing, incident ID, info sharing all real | pytest + GitHub Actions CI; the `trace_suspect.sh`/`ufw_guard.sh` incident writeups | ✅ | |
 | 5.1 | N/A — no external stakeholders yet | — | ⚪ | Revisit if `EDGE_ARCHITECTURE.md`'s consulting plan ever gets real customers. |
@@ -158,23 +231,23 @@ applicable.
 | # | Guardian Capability | Evidence | Status | Notes |
 |---|---|---|---|---|
 | 1.1 | Metrics selected for identified risks | `behavioral_policy.py`'s `POLICIES` dict (files/GPU/network/row-count bounds per workflow), tagged `NIST_AI_RMF_TAGS["MEASURE 1.1"]` in the same file | ✅ | |
-| 1.2 | Metrics reassessed | `RECENT_ROWS` inconsistency tracking, periodic doc audits | 🟡 | Happens, but reactively, not on a fixed cadence. |
+| 1.2 | Metrics reassessed | `RECENT_ROWS` inconsistency tracking, periodic doc audits; the 2026-09-10/11 `guardian_ai_risk.py` scoring rework, triggered by discovering `ai_risk_score` was structurally pinned below 100 | 🟡 | Happens, but reactively, not on a fixed cadence — this week's rework is a real instance of that same pattern, not a change to it. |
 | 1.3 | N/A — solo project | — | ⚪ | No independent reviewer separate from the developer. |
 | 2.1 | Test sets/tools documented | `test_behavioral_policy.py`, `test_guardian_health.py`, `test_release_chain.py`, `test_release_report.py` | ✅ | |
 | 2.2 | N/A | — | ⚪ | No human-subject evaluation involved. |
 | 2.3 | Performance measured under real conditions | Watchdogs score live production data continuously, not a held-out test set | ✅ | |
 | 2.4 | Behavior monitored in production | The entire watchdog/Prometheus/Grafana pipeline | ✅ | This is Guardian's core competency. |
 | 2.5 | Validity/reliability demonstrated, limits documented | The KNN drift pattern is a real, documented generalizability limit (training snapshot doesn't capture promtail's write-rate variability) | 🟡 | Real evidence of a limit; not a formal validity demonstration. |
-| 2.6 | Evaluated for safety; safe failure | `Restart=always`/`on-failure`, explicitly noted in `OPERATIONS_MANUAL.md` as "a crash-loop safety net, not an operations strategy"; `GOVERNANCE_POLICIES.md`'s failure-contingency section, which found one real graceful-degradation case (TensorFlow/CUDA) and one real non-graceful one (missing model file still crash-loops) | 🟡 | Honest documented gap, not silently omitted — now with a more precise picture of exactly which failure modes are and aren't handled safely, not just the general crash-loop caveat. |
-| 2.7 | Security/resilience evaluated | This session's `trace_suspect.sh` and `ufw_guard.sh` audits — both confirmed-exploitable gaps, found and closed | ✅ | Strong, concrete evidence. |
+| 2.6 | Evaluated for safety; safe failure | `Restart=always`/`on-failure`, explicitly noted in `OPERATIONS_MANUAL.md` as "a crash-loop safety net, not an operations strategy"; `GOVERNANCE_POLICIES.md`'s failure-contingency section, which found one real graceful-degradation case (TensorFlow/CUDA) and one real non-graceful one (missing model file still crash-loops); `ai_risk_collection_ok` + `safe_check()` (2026-09-10), which make a sub-check that raises distinguishable from one that ran and verified clean, instead of both looking like a silent zero | 🟡 | Honest documented gap, not silently omitted — the missing-model-file crash-loop is unchanged, still open, so still 🟡, but the failed-vs-clean distinction is a genuinely new safety mechanism, not just a note. |
+| 2.7 | Security/resilience evaluated | This session's `trace_suspect.sh` and `ufw_guard.sh` audits — both confirmed-exploitable gaps, found and closed; the 2026-09-11 MD5→SHA-256 upgrade and systemd-hash content fix; the 2026-09-20 Alertmanager Slack silent-failure discovery (below, MANAGE 4.3) | ✅ | Strong, concrete evidence — now five separate found-and-closed instances, not two. |
 | 2.8 | Transparency/accountability risk addressed | `release_record.py` + hash-chaining (`verify_chain.py`) | ✅ | |
-| 2.9 | Output explained/interpreted in context | `behavioral_policy.py`'s specific violation messages (e.g., `"row_count 20 below policy minimum 100"`), tagged `NIST_AI_RMF_TAGS["MEASURE 2.9"]` in the same file | ✅ | Named explicitly in NIST's own MEASURE 2.9 language — explains *why*, not just *that*. |
+| 2.9 | Output explained/interpreted in context | `behavioral_policy.py`'s specific violation messages (e.g., `"row_count 20 below policy minimum 100"`), tagged `NIST_AI_RMF_TAGS["MEASURE 2.9"]` in the same file; `ai_risk_reason{reason=<key>}=<points>` (2026-09-10), which names exactly which factor is deducting how many points from `ai_risk_score` | ✅ | Named explicitly in NIST's own MEASURE 2.9 language — explains *why*, not just *that*. Now demonstrated in a second, independent subsystem. |
 | 2.10 | None | — | ⚪ | System handles no third-party personal data today; revisit if `EDGE_ARCHITECTURE.md` ever handles customer data. |
 | 2.11 | Deliberately not applicable | — | ⚪ | Guardian's models detect system-metric anomalies (CPU/disk/GPU), not decisions about people — classic demographic-fairness framing doesn't have a clear analog here. Stated explicitly rather than silently skipped. |
 | 2.12 | Estimated retrain energy cost | `retrain_common.py`'s `estimate_energy_wh()`, attached to every retrain's OTel span as `energy.estimated_wh` | 🟡 | Real measurement now exists where none did, but it's a documented estimate (CPU% interpolated against this host's published TDP), not a true RAPL measurement — `energy_uj` is root-only on this host (Platypus mitigation) and wasn't judged worth new sudo scope for one metric. |
 | 2.13 | TEVV effectiveness informally evaluated | The real defect-demo proving Phase 5 catches an actual injected regression, tagged `NIST_AI_RMF_TAGS["MEASURE 2.13"]` in `behavioral_policy.py` | 🟡 | Proven once, not a repeatable evaluation process. |
 | 3.1 | Existing/emergent risks tracked over time | The KNN drift pattern tracked across 4 documented recurrences (2026-07-13, -16, -17, -27) | ✅ | |
-| 3.2 | Hard-to-measure risk tracked via proxy signals | The DESKTOP-0AJUKU3 power-quality hypothesis, tracked via disk busy%/event-log proxies | 🟡 | Updated 2026-08-05 — a UPS was bought and installed since this was first written, but NUT integration into Guardian was deliberately declined (would have broken PowerPanel's auto-shutdown safety feature), so Guardian itself still only has proxy signals, not direct voltage/power measurement. Status unchanged, but the old note ("a UPS doesn't exist yet") was stale and is corrected here. |
+| 3.2 | Hard-to-measure risk tracked via proxy signals | The DESKTOP-0AJUKU3 power-quality hypothesis, tracked via disk busy%/event-log proxies — a third real recurrence, 2026-09-14/15, added a specific new data point: `guardian_disk_health.ps1` caught Event ID 153 (I/O device error) in the 24h before the crash, and disk busy% spiked ~0.5%→32% in the last sample before it went unresponsive | 🟡 | Updated 2026-08-05 — a UPS was bought and installed since this was first written, but NUT integration into Guardian was deliberately declined (would have broken PowerPanel's auto-shutdown safety feature), so Guardian itself still only has proxy signals, not direct voltage/power measurement. Status unchanged. Reinforced 2026-09-20 with a third occurrence's real evidence, same proxy-signal limitation. |
 | 3.3 | N/A — no external end users | — | ⚪ | |
 | 4.1 | N/A — no external domain experts | — | ⚪ | |
 | 4.2 | N/A — same | — | ⚪ | |
@@ -192,13 +265,13 @@ applicable.
 | 1.4 | N/A — no downstream acquirers yet | — | ⚪ | Revisit if `EDGE_ARCHITECTURE.md`'s consulting plan gets real customers. |
 | 2.1 | Informal resource/tradeoff decisions | Deferring scoped-agent-identity work due to real friction cost | 🟡 | Real judgment calls; not a formal resourcing process. |
 | 2.2 | Mechanisms to sustain deployed AI value | The retrain pipeline itself | ✅ | |
-| 2.3 | Respond to/recover from previously unknown risk | Both sudoers fixes were exactly this: an unknown gap, discovered, responded to; the 2026-08-04 bad-iForest-retrain (an unknown latent `RECENT_ROWS` bug, surfaced live, recovered from immediately via the freshly-built model archive) | ✅ | Textbook real-time example — the recovery mechanism was built the same session it ended up needing to be used. |
+| 2.3 | Respond to/recover from previously unknown risk | Both sudoers fixes were exactly this: an unknown gap, discovered, responded to; the 2026-08-04 bad-iForest-retrain (an unknown latent `RECENT_ROWS` bug, surfaced live, recovered from immediately via the freshly-built model archive); the `ai_risk_score` baseline-pinning bug and the Alertmanager Slack silent-failure bug (2026-09-20, see MANAGE 4.3) — both discovered and fixed same-day | ✅ | Textbook real-time example — the recovery mechanism was built the same session it ended up needing to be used. Two more real instances since 8/5. |
 | 2.4 | Mechanisms to deactivate underperforming AI | Manual `systemctl stop`/`restart` exists | 🟡 | No automated kill-switch if a model's anomaly rate exceeds a bound — only manual intervention. |
 | 3.1 | Third-party risk informally monitored | OS-level pending-updates gauge (`aiops_security_updates_pending`) | 🟡 | Tracks OS packages generally; not AI-library-specific (e.g., no dependency vulnerability scanning for scikit-learn/TensorFlow). |
 | 3.2 | Deliberately not applicable | — | ⚪ | Guardian trains its own models from scratch; no pre-trained models in use. |
-| 4.1 | Post-deployment monitoring plan | `OPERATIONS_MANUAL.md` Ch. 6 (Operations and Runbook), the alerting pipeline | 🟡 | Strong on monitoring/incident response; "appeal/override" doesn't map cleanly to a personal system. |
+| 4.1 | Post-deployment monitoring plan | `OPERATIONS_MANUAL.md` Ch. 6 (Operations and Runbook), the alerting pipeline | 🟡 | Strong on monitoring/incident response; "appeal/override" doesn't map cleanly to a personal system. **Sharper gap found 2026-09-20:** the Core host itself suspended for ~65 hours (2026-09-11 22:14 UTC → 2026-09-14 22:04 UTC) — Prometheus, Alertmanager, every watchdog simply weren't running for that entire window, not degraded, off. Nothing could have detected a real incident during it, because the thing that detects incidents was itself asleep, and nothing monitors that. Found by accident, not by any Guardian mechanism. |
 | 4.2 | Continual improvement integrated | `ROADMAP.md`'s explicitly-living-document nature; this gap analysis itself | ✅ | |
-| 4.3 | Incidents communicated to relevant actors | Alertmanager → Slack, reaching the one operator that exists | 🟡 | Works for the actors that exist; no "affected communities" yet. |
+| 4.3 | Incidents communicated to relevant actors | Alertmanager → Slack, reaching the one operator that exists | 🟡 | **Corrected 2026-09-20, not just reinforced:** for 64% of send attempts (234/367) since Alertmanager started (2026-08-26), this claim was false in practice, silently — `.CommonAnnotations` rendered empty whenever a group held more than one alert with per-instance text (e.g. `WindowsHostUnreachable` across two Windows hosts), Slack rejected the empty message, nothing logged why. This is the actual reason DESKTOP-0AJUKU3's 11-hour outage on 9/15 never reached Slack. Fixed same day the failure was found (template now renders per-alert, verified via a synthetic reproduction of the exact failing shape). Still 🟡 — the mechanism now works, but "existed and looked wired up" and "worked" were different claims for three weeks, and that's worth stating plainly rather than smoothing over now that it's fixed. |
 
 ---
 
@@ -210,6 +283,7 @@ applicable.
 - **MAP was the real, actionable opportunity as of 2026-07-31** — and both later passes acted on exactly that: the 2 flat MAP gaps closed to ✅ on 2026-08-04, then a further MAP row (4.2, third-party risk controls) genuinely earned an upgrade on 2026-08-05 — all through documentation of things that were already informally true, no new infrastructure needed, matching the original prediction.
 - **No subcategory is marked "Planned."** Everything real here was built to solve an actual problem, not to fill a framework cell — worth stating as a genuine differentiator, not just a coincidence of how this document turned out. Still true after both updates: the 2 items that moved to 🟡 instead of ✅ on 2026-08-04 (GOVERN 6.2, MEASURE 2.12) were deliberately *not* pushed to ✅ by overstating what was actually built, and the 2026-08-05 pass found real new evidence for its 3 upgrades rather than reinterpreting existing evidence more generously.
 - **The full fresh pass surfaced one real gap the earlier, narrower passes couldn't have found:** genuine operational learnings from this week (two new ML-drift trigger patterns and their fixes) exist only in session memory, not in any git-tracked doc — see the Summary rollup note for detail. Worth treating as a real follow-up, not a documentation nitpick.
+- **Stage 6 (2026-09-20) surfaced the sharpest finding in this document's history:** MANAGE 4.3's evidence — Alertmanager reaching Slack — was factually wrong for three weeks, silently, and the only reason it's known now is that an unrelated 11-hour outage went unnoticed long enough to prompt asking why. Left uncorrected, that's exactly the failure mode this whole framework exists to catch: a control that looks satisfied on paper and isn't, discovered by luck rather than by the system itself. It's now fixed and verified, but the honest record is that it wasn't caught by Guardian noticing — it was caught by a human asking a question the tooling gave no reason to ask.
 
 ## What this document does not claim
 
@@ -222,8 +296,13 @@ other 65 were not re-checked that day. **2026-08-05 update:** every one of
 the 72 subcategories was re-verified against current real evidence, full
 rigor, not assumed — the first genuine full re-run since 7/31. Three rows
 earned real upgrades; the rest were confirmed accurate or got stronger
-supporting evidence without a status change. This document is current as
-of 2026-08-05. The whole document should still be re-run periodically as
-Guardian keeps changing, the same way the doc-vs-reality audits already
-are — being current today doesn't mean staying current without another
-pass later.
+supporting evidence without a status change. **2026-09-20 update (Stage
+6):** a targeted pass, not a full 72-row re-run — nine rows across GOVERN,
+MEASURE, and MANAGE touched with real evidence from the six weeks since
+8/5, no status changes, one row (MANAGE 4.3) corrected rather than merely
+reinforced. This document is current as of 2026-09-20 for the rows it
+touched; the remaining rows were last verified 2026-08-05 and are assumed,
+not re-confirmed, this time. The whole document should still be re-run
+periodically as Guardian keeps changing, the same way the doc-vs-reality
+audits already are — being current today doesn't mean staying current
+without another pass later.
