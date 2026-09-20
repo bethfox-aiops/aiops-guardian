@@ -11,10 +11,33 @@ receivers:
       # A basic Incoming Webhook already posts to whatever channel it was
       # created for -- no `channel:` override needed unless you set one up
       # with different scopes.
+      #
+      # title/text deliberately loop over .Alerts rather than use
+      # .CommonAnnotations (fixed 2026-09-20): group_by is ['alertname',
+      # 'job'], and most of these alerts render per-instance text into
+      # summary/description (e.g. "Windows host {{ $labels.instance }} is
+      # unreachable"). Whenever a group holds more than one alert with
+      # different rendered text -- e.g. WindowsHostUnreachable firing for
+      # both DESKTOP-0AJUKU3 and DESKTOP-503POVP at once -- .CommonAnnotations
+      # has no value in common across them and renders empty. Slack's
+      # Incoming Webhook API rejects an empty message text, which Alertmanager
+      # recorded as alertmanager_notifications_failed_total{reason="other"} --
+      # silently, nothing in the journal. Confirmed: 234 of 367 Slack sends
+      # had failed this way since the service started (2026-08-26), un-noticed
+      # until DESKTOP-0AJUKU3's outage went 11 hours without a ping. Looping
+      # per-alert works regardless of group size.
       - api_url_file: /etc/alertmanager/slack_webhook_url
         send_resolved: true
-        title: '{{ .CommonAnnotations.summary }}'
-        text: '{{ .CommonAnnotations.description }}'
+        title: >-
+          {{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }}
+          {{ .CommonLabels.alertname }} ({{ len .Alerts }})
+        text: >-
+          {{ range .Alerts }}
+          *{{ if .Labels.instance }}{{ .Labels.instance }}{{ else if .Labels.check }}{{ .Labels.check }}{{ else }}{{ .Labels.alertname }}{{ end }}* [{{ .Status }}]
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+
+          {{ end }}
 
 inhibit_rules:
   - source_matchers: ['severity="critical"']
