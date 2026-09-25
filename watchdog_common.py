@@ -102,20 +102,31 @@ def require_file(path: str, trainer_name: str) -> None:
 
 # ---- GPU Helpers ----
 
-def init_gpu(gpu_index: int):
+def init_gpu(gpu_index: int, retries: int = 5, retry_delay: float = 2.0):
+    """Retries a few times with a short delay before giving up -- see the
+    matching fix in aiops-watchdog-ml.py's init_gpu() for why a single
+    startup-only attempt is unsafe (a 2026-09-20 boot-order race against the
+    nvidia kernel module permanently zeroed that collector's GPU metrics for
+    its whole uptime; this shared helper had the identical single-attempt
+    shape and just didn't lose that particular race that time)."""
     if not NVML_AVAILABLE:
         print("[WARN] pynvml not installed. GPU metrics will be 0.", flush=True)
         return None
 
-    try:
-        nvmlInit()
-        handle = nvmlDeviceGetHandleByIndex(gpu_index)
-        print(f"[INFO] Using GPU index {gpu_index} for watchdog metrics.", flush=True)
-        return handle
-    except Exception as e:
-        print(f"[WARN] Failed to init NVML / GPU index {gpu_index}: {e}", flush=True)
-        print("[WARN] GPU metrics will be recorded as 0.", flush=True)
-        return None
+    for attempt in range(1, retries + 1):
+        try:
+            nvmlInit()
+            handle = nvmlDeviceGetHandleByIndex(gpu_index)
+            print(f"[INFO] Using GPU index {gpu_index} for watchdog metrics.", flush=True)
+            return handle
+        except Exception as e:
+            print(f"[WARN] NVML init attempt {attempt}/{retries} failed: {e}", flush=True)
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    print(f"[WARN] Failed to init NVML / GPU index {gpu_index} after {retries} attempts.", flush=True)
+    print("[WARN] GPU metrics will be recorded as 0.", flush=True)
+    return None
 
 
 def get_gpu_metrics(handle):

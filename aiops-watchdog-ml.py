@@ -54,22 +54,37 @@ COLUMNS = [
 ]
 
 
-def init_gpu(gpu_index: int):
-    """Initialize NVML and return a handle to the GPU, or None if unavailable."""
+def init_gpu(gpu_index: int, retries: int = 5, retry_delay: float = 2.0):
+    """Initialize NVML and return a handle to the GPU, or None if unavailable.
+
+    Retries a few times with a short delay before giving up. A prior version
+    tried exactly once at process startup -- on 2026-09-20 this service won a
+    boot-order race against the nvidia kernel module ("Driver Not Loaded" at
+    the exact moment it started) and, with no retry, recorded gpu_util/
+    gpu_mem_mib/gpu_temp_c as 0.0 for its entire multi-day uptime. Every
+    retrain since then read that as "GPU is always 0," so a real, healthy
+    GPU reading (~446 MiB, ~46C) later looked like a massive outlier to
+    every anomaly model -- a training/serving skew, not a real incident.
+    """
     if not NVML_AVAILABLE:
         print("[WARN] pynvml not installed. GPU metrics will be 0. "
               "Install with: pip3 install nvidia-ml-py3")
         return None
 
-    try:
-        nvmlInit()
-        handle = nvmlDeviceGetHandleByIndex(gpu_index)
-        print(f"[INFO] Using GPU index {gpu_index} for metrics.")
-        return handle
-    except Exception as e:
-        print(f"[WARN] Failed to initialize NVML / GPU index {gpu_index}: {e}")
-        print("[WARN] GPU metrics will be recorded as 0.")
-        return None
+    for attempt in range(1, retries + 1):
+        try:
+            nvmlInit()
+            handle = nvmlDeviceGetHandleByIndex(gpu_index)
+            print(f"[INFO] Using GPU index {gpu_index} for metrics.")
+            return handle
+        except Exception as e:
+            print(f"[WARN] NVML init attempt {attempt}/{retries} failed: {e}")
+            if attempt < retries:
+                time.sleep(retry_delay)
+
+    print(f"[WARN] Failed to initialize NVML / GPU index {gpu_index} after {retries} attempts.")
+    print("[WARN] GPU metrics will be recorded as 0.")
+    return None
 
 
 def get_gpu_metrics(handle):
