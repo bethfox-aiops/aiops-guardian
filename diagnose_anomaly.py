@@ -167,27 +167,101 @@ def check_self_resolution(job, window_minutes=10):
     return pct_anomalous, (second_half_rate < first_half_rate)
 
 
-def diagnose(model_name):
+def build_verdict(model_name, gt=None, corr=None):
+    """Runs the full diagnostic playbook for one watchdog and returns a
+    structured verdict -- the single source of truth behind both the CLI
+    (diagnose(), below) and the approval panel's retrain recommendation
+    (aiops-approval.py), so the two can't silently drift into disagreeing
+    about when a retrain is warranted.
+
+    `gt` (check_ground_truth()'s return) and `corr`
+    (check_suspend_or_reboot_correlation()'s return) can be precomputed and
+    passed in -- ground truth is a ~1s real CPU sample and doesn't depend on
+    which model is asking, so a caller checking all three watchdogs at once
+    (the approval panel does) should compute each once and reuse it, not
+    pay the cost three times over for an identical answer.
+    """
     if model_name not in WATCHDOGS:
-        print(f"[ERROR] Unknown model '{model_name}'. Choose from: {', '.join(WATCHDOGS)}")
+        raise ValueError(f"Unknown model '{model_name}'. Choose from: {', '.join(WATCHDOGS)}")
+
+    cfg = WATCHDOGS[model_name]
+    label, score = check_current_state(cfg["port"])
+    if label is None:
+        return {
+            "model": model_name, "reachable": False,
+            "verdict": "Could not reach the watchdog's /metrics endpoint.",
+            "recommend_retrain": False,
+        }
+
+    if gt is None:
+        gt = check_ground_truth()
+    if corr is None:
+        corr = check_suspend_or_reboot_correlation()
+    corr_time, corr_type = corr
+
+    pct_anom, declining = check_self_resolution(cfg["job"])
+
+    if not gt["healthy"]:
+        verdict = ("GROUND TRUTH DEGRADED. This may be a real incident, not a model artifact. "
+                   "Recommendation: investigate directly, do not just retrain.")
+        recommend_retrain = False
+    elif label == 0 and pct_anom is not None and pct_anom < 20:
+        verdict = ("All clear. Not currently anomalous, low recent anomaly rate, ground truth "
+                   "healthy. Recommendation: no action needed.")
+        recommend_retrain = False
+    elif corr_type and pct_anom is not None and declining:
+        verdict = (f"Matches the known {corr_type} drift pattern and is already self-resolving. "
+                   "Recommendation: no action needed, keep monitoring.")
+        recommend_retrain = False
+    elif corr_type:
+        verdict = (f"Matches the known {corr_type} drift pattern, not yet resolving. "
+                   "Recommendation: retrain on current post-event data.")
+        recommend_retrain = True
+    elif pct_anom is not None and pct_anom > 80 and not declining:
+        verdict = ("Sustained anomaly, no reboot/suspend correlation, ground truth healthy. "
+                   "Recommendation: check the top-suspect process for a known pattern "
+                   "(e.g. promtail); retrain if this persists.")
+        recommend_retrain = True
+    else:
+        verdict = "No known pattern matched confidently. Recommendation: needs human investigation."
+        recommend_retrain = False
+
+    return {
+        "model": model_name,
+        "reachable": True,
+        "label": label,
+        "score": score,
+        "ground_truth": gt,
+        "correlation": {"time": corr_time, "type": corr_type},
+        "pct_anomalous_10min": pct_anom,
+        "declining": declining,
+        "verdict": verdict,
+        "recommend_retrain": recommend_retrain,
+    }
+
+
+def diagnose(model_name):
+    try:
+        v = build_verdict(model_name)
+    except ValueError as e:
+        print(f"[ERROR] {e}")
         sys.exit(1)
 
     cfg = WATCHDOGS[model_name]
     print(f"=== Diagnosing {model_name} ({cfg['service']}) ===\n")
 
-    label, score = check_current_state(cfg["port"])
-    if label is None:
+    if not v["reachable"]:
         print("[ERROR] Could not reach the watchdog's /metrics endpoint.")
         sys.exit(1)
-    print(f"Current state: label={label} score={score:.4f}")
 
-    if label == 0:
+    print(f"Current state: label={v['label']} score={v['score']:.4f}")
+    if v["label"] == 0:
         print("\nNot currently anomalous. If this ran because an alert fired, the")
         print("issue may already have resolved by the time this ran -- still worth")
         print("checking the trend below rather than assuming it's fully over.")
 
+    gt = v["ground_truth"]
     print("\nChecking ground truth (takes ~1s for a real CPU sample)...")
-    gt = check_ground_truth()
     print(f"Ground truth: load1={gt['load1']:.2f} mem_used={gt['mem_used_pct']:.1f}% "
           f"swap_used={gt['swap_used_pct']:.1f}%")
     print("Top processes: " + ", ".join(
@@ -195,39 +269,22 @@ def diagnose(model_name):
     ))
     print(f"Ground truth healthy: {gt['healthy']}")
 
-    corr_time, corr_type = check_suspend_or_reboot_correlation()
+    corr_type = v["correlation"]["type"]
+    corr_time = v["correlation"]["time"]
     if corr_type:
         print(f"\nCorrelation found: {corr_type} at {corr_time} (within the last 30 min)")
     else:
         print("\nNo suspend/resume or reboot correlation in the last 30 minutes.")
 
-    pct_anom, declining = check_self_resolution(cfg["job"])
+    pct_anom = v["pct_anomalous_10min"]
     if pct_anom is not None:
-        trend = "declining (self-resolving)" if declining else "not declining"
+        trend = "declining (self-resolving)" if v["declining"] else "not declining"
         print(f"\nLast 10 min: {pct_anom:.0f}% anomalous, trend: {trend}")
     else:
         print("\nCould not retrieve recent history from Prometheus.")
 
     print("\n--- Verdict ---")
-    if not gt["healthy"]:
-        print("GROUND TRUTH DEGRADED. This may be a real incident, not a model artifact.")
-        print("Recommendation: investigate directly, do not just retrain.")
-    elif label == 0 and pct_anom is not None and pct_anom < 20:
-        print("All clear. Not currently anomalous, low recent anomaly rate, ground truth healthy.")
-        print("Recommendation: no action needed.")
-    elif corr_type and pct_anom is not None and declining:
-        print(f"Matches the known {corr_type} drift pattern and is already self-resolving.")
-        print("Recommendation: no action needed, keep monitoring.")
-    elif corr_type:
-        print(f"Matches the known {corr_type} drift pattern, not yet resolving.")
-        print("Recommendation: retrain on current post-event data.")
-    elif pct_anom is not None and pct_anom > 80 and not declining:
-        print("Sustained anomaly, no reboot/suspend correlation, ground truth healthy.")
-        print("Recommendation: check the top-suspect process above for a known pattern "
-              "(e.g. promtail); retrain if this persists.")
-    else:
-        print("No known pattern matched confidently.")
-        print("Recommendation: needs human investigation.")
+    print(v["verdict"])
 
 
 if __name__ == "__main__":

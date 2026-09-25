@@ -71,6 +71,10 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:8018"]
 
+  - job_name: "aiops-watchdog-decisions"
+    static_configs:
+      - targets: ["localhost:8021"]
+
   - job_name: 'windows-node'
     static_configs:
       - targets: ['DESKTOP-0AJUKU3:9182', 'DESKTOP-503POVP:9182']

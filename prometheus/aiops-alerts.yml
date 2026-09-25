@@ -1,0 +1,112 @@
+groups:
+  - name: aiops_watchdog_alerts
+    rules:
+      - alert: KNNWatchdogSustainedAnomaly
+        expr: aiops_anomaly_label{job="aiops-watchdog-knn"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "KNN anomaly watchdog has been anomalous for 30+ minutes"
+          description: "aiops-watchdog-knn has reported label=1 continuously for at least 30 minutes. This has recurred repeatedly (2026-07-13, 2026-07-16, 2026-07-17), usually attributed to promtail's write pattern. Consider running retrain_recent_knn.py from /home/beth/aiops-agents/."
+
+      - alert: IForestWatchdogSustainedAnomaly
+        expr: aiops_anomaly_label{job="aiops-watchdog-iforest"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Isolation Forest anomaly watchdog has been anomalous for 30+ minutes"
+          description: "aiops-watchdog-iforest has reported label=1 continuously for at least 30 minutes. Consider running retrain_recent_iforest.py from /home/beth/aiops-agents/."
+
+      - alert: AutoencoderWatchdogSustainedAnomaly
+        expr: aiops_anomaly_label{job="aiops-watchdog-autoencoder"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Autoencoder anomaly watchdog has been anomalous for 30+ minutes"
+          description: "aiops-watchdog-autoencoder has reported label=1 continuously for at least 30 minutes. Consider running retrain_recent.py from /home/beth/aiops-agents/."
+
+      - alert: WindowsHostUnreachable
+        expr: up{job="windows-node"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Windows host {{ $labels.instance }} is unreachable"
+          description: "Prometheus has been unable to scrape windows_exporter on {{ $labels.instance }} for 5+ minutes. The 5m window is deliberate: a normal reboot's downtime (observed 2026-07-29: ~45 seconds) should self-resolve without paging, but a real outage should not go unnoticed like DESKTOP-0AJUKU3's second, still-unresolved outage did that same morning. This alert cannot distinguish a real crash from a network/firewall/service issue -- Guardian has no local agent on Windows hosts, only remote windows_exporter scraping. Check the host directly (Event Viewer System log, Event ID 41 = unexpected shutdown, 1001 = BugCheck with stop code) for the actual cause."
+
+      - alert: EdgePipelineStale
+        expr: absent_over_time(up{edge_site="guardian-proto-1"}[30m])
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "No data received from the edge Pi (guardian-proto-1) in 30+ minutes"
+          description: "The guardian-proto-1 Pi's remote_write to Core has stopped delivering edge_site=\"guardian-proto-1\"-labeled series. This exact failure mode ran silently for ~12 days in Aug 2026 (stale IP after a DHCP change, caught by accident) before the mDNS-hostname fix -- this alert exists so the next occurrence pages instead of going unnoticed."
+
+      - alert: PendingApprovalDecision
+        expr: aiops_pending_decision == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian recommends a retrain for {{ $labels.model }}, awaiting approval"
+          description: "aiops-watchdog-decisions.py (which just exports diagnose_anomaly.build_verdict() -- the same function the AIOps Approval Control Plane and the daily report both use) has recommended retraining {{ $labels.model }} continuously for 30+ minutes with no approve/deny decision yet. Review at the AIOps Approval Control Plane (http://localhost:8020)."
+
+  - name: aiops_ai_risk_alerts
+    rules:
+      - alert: AIRiskCollectionFailing
+        expr: ai_risk_collection_ok == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI-risk checks have been failing to complete for 15+ minutes"
+          description: "ai_risk_collection_ok has been 0 for 15+ minutes: at least one AI-risk sub-check raised an exception every cycle, so ai_risk_score is computed from stale or default values and cannot be trusted. Check aiops-guardian-health's journal for [AI-ERR] lines naming the failing check. This gauge exists specifically so a broken collector is distinguishable from a genuine all-clear (the same distinction aiops_logs_query_ok draws for the log watchdog)."
+
+      - alert: AITrainingDataTampered
+        expr: ai_training_data_hash_changed == 1
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Guardian training CSV changed in a way a plain append can't explain"
+          description: "check_training_data_changed() flagged aiops_data/metrics.csv: either the file shrank (rows truncated/removed) or bytes written before the previous cycle were rewritten in place. Normal operation is append-only via aiops-watchdog-ml, so this indicates the retrain window was edited -- possible data poisoning ahead of the next retrain_recent* run. Do not retrain until the cause is understood; inspect recent writers and the file's tail."
+
+      - alert: AIRiskScoreLow
+        expr: ai_risk_score <= 55
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI risk score has been {{ $value }} for 15+ minutes"
+          description: "ai_risk_score has sat at or below 55 for 15+ minutes. After the 2026-09-10 rework a clean host scores 100, and a developer's own Claude Code session (outbound LLM connections, capped -20) bottoms out around 80 -- so <=55 means at least one further real factor is active (exposed keys, shadow models, watchdog ports externally reachable, GPU spike, model drift). Break it down with ai_risk_reason{reason=...}, which carries the points each factor is currently deducting."
+
+      - alert: AIExposedApiKeysOnDisk
+        expr: ai_exposed_api_keys > 0
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "{{ $value }} place(s) an AI API key is exposed on disk"
+          description: "get_exposed_api_keys() found an AI provider key in a shell dotfile, ~/.config, ~/.netrc, a systemd unit Environment=/EnvironmentFile= line, or a repo .env -- or a .env/secrets file is tracked in git. Rotate the key, move it to a non-committed secret store, and confirm .gitignore covers .env."
+
+      - alert: AIShadowModelFiles
+        expr: ai_shadow_model_count > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} model file(s) found outside the known model directory"
+          description: "get_shadow_model_count() found .pkl/.pt/.onnx/.h5/.safetensors files in /tmp, /dev/shm, /var/tmp or under $HOME outside the known model dir and the allow-listed project subtrees. Could be a stray experiment or an unsanctioned model drop; verify provenance and remove or relocate."
+
+      - alert: AICheckStale
+        expr: time() - ai_check_last_success_timestamp > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Guardian AI-risk sub-check '{{ $labels.check }}' hasn't succeeded in 30+ minutes"
+          description: "ai_check_last_success_timestamp for check={{ $labels.check }} is more than 30 minutes old. The expensive checks (outbound_llm_connections, shadow_model_scan) only run every 20 cycles (~10 min), so a 30-minute gap means they have been failing rather than merely waiting their turn. Cross-check with AIRiskCollectionFailing and the [AI-ERR] journal lines."

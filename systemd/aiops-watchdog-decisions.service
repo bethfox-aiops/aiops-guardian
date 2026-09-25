@@ -1,0 +1,24 @@
+[Unit]
+Description=AIOps Watchdog Agent (Pending Decision Export)
+After=network.target
+
+[Service]
+Type=simple
+User=beth
+WorkingDirectory=/home/beth/aiops-agents
+
+# === Python virtual environment ===
+ExecStart=/opt/aiops-venv/bin/python /home/beth/aiops-agents/aiops-watchdog-decisions.py
+
+# === Environment variables ===
+Environment="PYTHONUNBUFFERED=1"
+Environment="WATCHDOG_PORT=8021"
+
+# === Restart and output control ===
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

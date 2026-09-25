@@ -123,7 +123,39 @@ panels.append(gauge_panel("Health Score", "aiops_health_score", x=6, y=1))
 panels.append(gauge_panel("Security Score", "aiops_security_score", x=12, y=1))
 panels.append(gauge_panel("AI Risk Score", "ai_risk_score", x=18, y=1))
 
-# ── Row 2: Priority Warnings ─────────────────────────────────────────────────
+# ── Row 2: Decisions Needed ──────────────────────────────────────────────────
+# Added 2026-09-25, alongside the aiops-approval.py retrain-recommendation
+# feature. Sourced from aiops-watchdog-decisions.py's aiops_pending_decision
+# gauge, itself just diagnose_anomaly.build_verdict() exported as a metric --
+# same function the approval panel and the daily report both call, so this
+# tile, the panel, and the report can't quietly disagree about whether a
+# decision is pending. Decision-pending value mappings read as text, not a
+# bare 0/1, matching the "Guardian Status" tile's pattern above.
+decision_mappings = [
+    {"type": "value", "options": {"0": {"text": "Clear", "color": "green"}}},
+    {"type": "value", "options": {"1": {"text": "Decision Needed", "color": "red"}}},
+]
+panels.append(row("Decisions Needed", 7))
+for i, model in enumerate(["knn", "iforest", "autoencoder"]):
+    panels.append({
+        "type": "stat",
+        "title": f"{model.upper()}: Retrain Decision",
+        "description": "Approve/deny at the AIOps Approval Control Plane (http://localhost:8020).",
+        "gridPos": {"h": 4, "w": 8, "x": i * 8, "y": 8},
+        "datasource": PROM_DS,
+        "targets": [{"expr": f'aiops_pending_decision{{model="{model}"}}', "datasource": PROM_DS, "refId": "A"}],
+        "fieldConfig": {
+            "defaults": {
+                "unit": "short",
+                "mappings": decision_mappings,
+                "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]},
+            },
+            "overrides": [],
+        },
+        "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+    })
+
+# ── Row 3: Priority Warnings ─────────────────────────────────────────────────
 # Cross-source triage from aiops-watchdog-priority.py: currently-firing
 # Prometheus ALERTS, Guardian's own health/security/AI-risk/Windows/log
 # checks, and all_check.service, ranked by tier + whether each check just
@@ -132,11 +164,11 @@ panels.append(gauge_panel("AI Risk Score", "ai_risk_score", x=18, y=1))
 # doesn't work here (all_check.py's ssh check alone would swamp any such
 # view). Sorted descending so the most important warning is always the
 # top row; empty when nothing's currently flagged.
-panels.append(row("Priority Warnings", 7))
+panels.append(row("Priority Warnings", 12))
 panels.append({
     "type": "table",
     "title": "Top Priority Warnings (all sources, ranked)",
-    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 13},
     "datasource": PROM_DS,
     "targets": [{"expr": "aiops_priority_score", "datasource": PROM_DS, "refId": "A", "instant": True, "format": "table"}],
     "fieldConfig": {"defaults": {}, "overrides": []},
@@ -151,12 +183,12 @@ panels.append({
     "options": {"sortBy": [{"desc": True, "displayName": "Priority"}]},
 })
 
-# ── Row 3: Recent Events ─────────────────────────────────────────────────────
-panels.append(row("Recent Events", 16))
+# ── Row 4: Recent Events ─────────────────────────────────────────────────────
+panels.append(row("Recent Events", 21))
 panels.append({
     "type": "table",
     "title": "Currently Firing Alerts",
-    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+    "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
     "datasource": PROM_DS,
     "targets": [{"expr": 'ALERTS{alertstate="firing"}', "datasource": PROM_DS, "refId": "A", "instant": True, "format": "table"}],
     "fieldConfig": {"defaults": {}, "overrides": []},
@@ -164,20 +196,20 @@ panels.append({
 panels.append({
     "type": "annolist",
     "title": "Guardian Events (Annotations)",
-    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+    "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
     "options": {"tags": ["guardian"], "limit": 20, "showUser": False, "showTime": True, "showTags": True},
 })
 
-# ── Row 4: Anomaly Detection: Model Agreement ────────────────────────────────
-panels.append(row("Anomaly Detection: Model Agreement", 25))
+# ── Row 5: Anomaly Detection: Model Agreement ────────────────────────────────
+panels.append(row("Anomaly Detection: Model Agreement", 30))
 model_thresholds = {"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}
-panels.append(stat_panel("KNN", 'aiops_anomaly_label{job="aiops-watchdog-knn"}', x=0, y=26, w=8, h=4, thresholds=model_thresholds))
-panels.append(stat_panel("Isolation Forest", 'aiops_anomaly_label{job="aiops-watchdog-iforest"}', x=8, y=26, w=8, h=4, thresholds=model_thresholds))
-panels.append(stat_panel("Autoencoder", 'aiops_anomaly_label{job="aiops-watchdog-autoencoder"}', x=16, y=26, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("KNN", 'aiops_anomaly_label{job="aiops-watchdog-knn"}', x=0, y=31, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("Isolation Forest", 'aiops_anomaly_label{job="aiops-watchdog-iforest"}', x=8, y=31, w=8, h=4, thresholds=model_thresholds))
+panels.append(stat_panel("Autoencoder", 'aiops_anomaly_label{job="aiops-watchdog-autoencoder"}', x=16, y=31, w=8, h=4, thresholds=model_thresholds))
 panels.append({
     "type": "timeseries",
     "title": "Model Agreement Over Time",
-    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 30},
+    "gridPos": {"h": 8, "w": 24, "x": 0, "y": 35},
     "datasource": PROM_DS,
     "targets": [
         {"expr": 'aiops_anomaly_label{job="aiops-watchdog-knn"}', "datasource": PROM_DS, "refId": "A", "legendFormat": "KNN"},
@@ -187,17 +219,17 @@ panels.append({
     "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []},
 })
 
-# ── Row 5: Security Detail ───────────────────────────────────────────────────
-panels.append(row("Security Detail", 38))
-panels.append(stat_panel("UFW Enabled", "aiops_security_ufw_enabled", x=0, y=39, w=5, h=5,
+# ── Row 6: Security Detail ───────────────────────────────────────────────────
+panels.append(row("Security Detail", 43))
+panels.append(stat_panel("UFW Enabled", "aiops_security_ufw_enabled", x=0, y=44, w=5, h=5,
                           thresholds={"mode": "absolute", "steps": [{"color": "red", "value": None}, {"color": "green", "value": 1}]}))
-panels.append(stat_panel("Open Ports", "aiops_security_open_ports_count", x=5, y=39, w=5, h=5))
-panels.append(stat_panel("Failed Logins (recent)", "aiops_security_failed_logins_recent", x=10, y=39, w=5, h=5))
-panels.append(stat_panel("Root SSH Enabled", "aiops_security_root_ssh_enabled", x=15, y=39, w=4, h=5,
+panels.append(stat_panel("Open Ports", "aiops_security_open_ports_count", x=5, y=44, w=5, h=5))
+panels.append(stat_panel("Failed Logins (recent)", "aiops_security_failed_logins_recent", x=10, y=44, w=5, h=5))
+panels.append(stat_panel("Root SSH Enabled", "aiops_security_root_ssh_enabled", x=15, y=44, w=4, h=5,
                           thresholds={"mode": "absolute", "steps": [{"color": "green", "value": None}, {"color": "red", "value": 1}]}))
-panels.append(stat_panel("Updates Pending", "aiops_security_updates_pending", x=19, y=39, w=5, h=5))
+panels.append(stat_panel("Updates Pending", "aiops_security_updates_pending", x=19, y=44, w=5, h=5))
 
-# ── Row 6: Backup Status ─────────────────────────────────────────────────────
+# ── Row 7: Backup Status ─────────────────────────────────────────────────────
 # Added 2026-08-14, backup_status_collector.py (textfile collector, same
 # pattern as guardian_disk_health.ps1 on the Windows side). "Last Result"
 # is tri-state (Running/Succeeded/Failed), not just running/not-running --
@@ -215,11 +247,11 @@ result_mappings = [
     {"type": "value", "options": {"1": {"text": "Succeeded", "color": "green"}}},
     {"type": "value", "options": {"2": {"text": "Running", "color": "blue"}}},
 ]
-panels.append(row("Backup Status", 44))
+panels.append(row("Backup Status", 49))
 panels.append({
     "type": "stat",
     "title": "Deja-dup: Last Result",
-    "gridPos": {"h": 5, "w": 6, "x": 0, "y": 45},
+    "gridPos": {"h": 5, "w": 6, "x": 0, "y": 50},
     "datasource": PROM_DS,
     "targets": [{"expr": 'aiops_backup_last_result{backup="deja_dup"}', "datasource": PROM_DS, "refId": "A"}],
     "fieldConfig": {
@@ -234,7 +266,7 @@ panels.append({
 panels.append({
     "type": "stat",
     "title": "Deja-dup: Time Since Last Success",
-    "gridPos": {"h": 5, "w": 6, "x": 6, "y": 45},
+    "gridPos": {"h": 5, "w": 6, "x": 6, "y": 50},
     "datasource": PROM_DS,
     "targets": [{"expr": 'time() - aiops_backup_last_success_timestamp{backup="deja_dup"}', "datasource": PROM_DS, "refId": "A"}],
     "fieldConfig": {
@@ -249,7 +281,7 @@ panels.append({
 panels.append({
     "type": "stat",
     "title": "Root Backup: Last Result",
-    "gridPos": {"h": 5, "w": 6, "x": 12, "y": 45},
+    "gridPos": {"h": 5, "w": 6, "x": 12, "y": 50},
     "datasource": PROM_DS,
     "targets": [{"expr": 'aiops_backup_last_result{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
     "fieldConfig": {
@@ -264,7 +296,7 @@ panels.append({
 panels.append({
     "type": "stat",
     "title": "Root Backup: Time Since Last Success",
-    "gridPos": {"h": 5, "w": 6, "x": 18, "y": 45},
+    "gridPos": {"h": 5, "w": 6, "x": 18, "y": 50},
     "datasource": PROM_DS,
     "targets": [{"expr": 'time() - aiops_backup_last_success_timestamp{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
     "fieldConfig": {
@@ -279,7 +311,7 @@ panels.append({
 panels.append({
     "type": "stat",
     "title": "Root Backup: % Complete (while running)",
-    "gridPos": {"h": 4, "w": 6, "x": 12, "y": 50},
+    "gridPos": {"h": 4, "w": 6, "x": 12, "y": 55},
     "datasource": PROM_DS,
     "targets": [{"expr": 'aiops_backup_percent_complete{backup="root_usb"}', "datasource": PROM_DS, "refId": "A"}],
     "fieldConfig": {
@@ -295,12 +327,12 @@ panels.append({
     "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
 })
 
-# ── Row 7: Go Deeper ──────────────────────────────────────────────────────────
-panels.append(row("Go Deeper", 54))
+# ── Row 8: Go Deeper ──────────────────────────────────────────────────────────
+panels.append(row("Go Deeper", 59))
 panels.append({
     "type": "text",
     "title": "Component Dashboards",
-    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 55},
+    "gridPos": {"h": 6, "w": 24, "x": 0, "y": 60},
     "options": {
         "mode": "markdown",
         "content": (

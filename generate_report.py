@@ -23,19 +23,48 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import diagnose_anomaly
+
 PROM_URL = "http://127.0.0.1:9090"
 GRAFANA_URL = "http://127.0.0.1:3000"
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(REPO_DIR, "report_state.json")
 TOKEN_FILE = os.path.join(REPO_DIR, ".grafana_token")
+MAINTENANCE_FILE = os.path.join(REPO_DIR, "maintenance.json")
 
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
+# How many days a "Recent Events" entry can age before the report calls out
+# that nothing newer has landed -- otherwise a stale annotation reads as
+# today's news forever.
+EVENTS_STALE_DAYS = 3
 
 
 def _fmt(v):
     if v is None:
         return "?"
     return f"{v:.0f}" if float(v).is_integer() else f"{v:.1f}"
+
+
+def _fmt_score(v):
+    """Like _fmt, but for the top-level Scores table specifically -- "No
+    data" reads unambiguously as a missing metric, where a bare "?" next to
+    otherwise-numeric scores looks like the scoring pipeline itself broke."""
+    return "No data" if v is None else _fmt(v)
+
+
+def gather_maintenance():
+    """Hosts the user has manually marked as intentionally offline, so a
+    planned shutdown doesn't render identically to a real outage. Edit
+    maintenance.json directly to add/remove entries around planned downtime
+    -- a list of {"instance": "<exported_instance label, e.g.
+    DESKTOP-0AJUKU3:9182>", "reason": "<free text>"}. Returns
+    {instance: reason}."""
+    if not os.path.exists(MAINTENANCE_FILE):
+        return {}
+    with open(MAINTENANCE_FILE) as f:
+        entries = json.load(f)
+    return {e["instance"]: e.get("reason", "maintenance") for e in entries}
 
 
 def prom_query(expr):
@@ -272,6 +301,30 @@ def gather_anomaly_attribution():
     return attribution
 
 
+def gather_decisions():
+    """Per-model verdicts from diagnose_anomaly.build_verdict() -- the exact
+    same function aiops-approval.py's web panel and aiops-watchdog-
+    decisions.py's Prometheus gauge both call, so "is a decision pending"
+    has one implementation shared by the report, the approval panel, and
+    the Grafana/alerting path, not a fourth copy that could quietly
+    disagree with the other three. Ground truth and the suspend/reboot
+    correlation check are computed once and shared across all three models,
+    same reasoning as get_model_rows() in aiops-approval.py."""
+    try:
+        gt = diagnose_anomaly.check_ground_truth()
+        corr = diagnose_anomaly.check_suspend_or_reboot_correlation()
+    except Exception as e:
+        return {"error": str(e)}
+
+    verdicts = {}
+    for model in diagnose_anomaly.WATCHDOGS:
+        try:
+            verdicts[model] = diagnose_anomaly.build_verdict(model, gt=gt, corr=corr)
+        except Exception as e:
+            verdicts[model] = {"reachable": False, "verdict": str(e), "recommend_retrain": False}
+    return verdicts
+
+
 def _describe_attribution(attribution, job):
     info = attribution.get(job)
     if not info:
@@ -286,13 +339,32 @@ def _describe_attribution(attribution, job):
 
 
 def gather_firing_alerts():
+    """Every currently-firing Prometheus alert, deduped and labeled by its
+    `instance` -- an alert like WindowsHostUnreachable fires once per
+    scrape-path, and the same physical Windows host is scraped twice (direct,
+    and relayed via the Pi with edge_site set -- see the WINDOWS_MACHINES
+    comment above). Returning bare alertnames made two real hosts' alerts
+    render as four identical, unlabeled 'Alert firing: WindowsHostUnreachable.'
+    findings with no way to tell them apart."""
     url = f"{PROM_URL}/api/v1/query?" + urllib.parse.urlencode({"query": 'ALERTS{alertstate="firing"}'})
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.load(resp)
     except (urllib.error.URLError, urllib.error.HTTPError):
         return []
-    return [r["metric"].get("alertname") for r in data.get("data", {}).get("result", [])]
+
+    seen = set()
+    out = []
+    for r in data.get("data", {}).get("result", []):
+        labels = r["metric"]
+        name = labels.get("alertname")
+        instance = labels.get("instance")
+        key = (name, instance)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"alertname": name, "instance": instance})
+    return out
 
 
 def gather_annotations(tag="guardian", limit=10):
@@ -346,18 +418,33 @@ def gather_metrics():
     return {key: prom_query(expr) for key, expr in METRIC_QUERIES.items()}
 
 
-def build_findings(current, previous, firing_alerts, windows_health, collector_staleness, attribution):
+def build_findings(current, previous, firing_alerts, windows_health, collector_staleness, attribution, maintenance, decisions):
     """The rule-based 'playbook' engine: (condition, severity, template)
     triples, evaluated against current + previous state."""
     findings = []
 
+    if isinstance(decisions, dict) and "error" not in decisions:
+        for model, v in decisions.items():
+            if v.get("recommend_retrain"):
+                findings.append((
+                    "High",
+                    f"Decision needed: {model} -- {v.get('verdict', 'retrain recommended')} "
+                    "Review and approve/deny at the AIOps Approval Control Plane (http://localhost:8020).",
+                ))
+
     for instance, score in windows_health.items():
+        reason = maintenance.get(instance)
+        if reason:
+            findings.append(("Info", f"Windows host {instance} health score is {_fmt(score)} -- offline as expected ({reason})."))
+            continue
         if score < 50:
             findings.append(("Critical", f"Windows host {instance} health score is {_fmt(score)} -- Critical."))
         elif score < 80:
             findings.append(("Medium", f"Windows host {instance} health score is {_fmt(score)} -- Needs Attention."))
 
     for label, instance, age in collector_staleness:
+        if instance in maintenance:
+            continue
         if age > COLLECTOR_STALE_SECONDS:
             hours = age / 3600
             findings.append((
@@ -365,6 +452,13 @@ def build_findings(current, previous, firing_alerts, windows_health, collector_s
                 f"{instance}: {label} collector data is stale ({hours:.1f}h old) -- "
                 "check the scheduled task/script on that host.",
             ))
+
+    if current.get("health_score") is None and current.get("security_score") is None and current.get("ai_risk_score") is None:
+        findings.append((
+            "Medium",
+            "Guardian's own health/security/AI-risk scores reported no data this cycle -- "
+            "check the Prometheus scrape for job=\"aiops-guardian-health\" (port 8014).",
+        ))
 
     scores = [s for s in (current.get("health_score"), current.get("security_score"), current.get("ai_risk_score")) if s is not None]
     if scores:
@@ -380,22 +474,41 @@ def build_findings(current, previous, firing_alerts, windows_health, collector_s
         "Autoencoder": current.get("autoencoder_label"),
     }
     present = {k: v for k, v in labels.items() if v is not None}
-    if present and len(set(present.values())) > 1:
-        anomalous = [k for k, v in present.items() if v == 1]
-        normal = [k for k, v in present.items() if v == 0]
+    anomalous = sorted(k for k, v in present.items() if v == 1)
+    normal = sorted(k for k, v in present.items() if v == 0)
+    missing = sorted(set(labels) - set(present))
+    if anomalous:
+        # Two+ independent models agreeing is the stronger signal, not a
+        # weaker one -- a prior version of this check only fired on
+        # *disagreement* between models, which silently dropped the case
+        # where every reporting model agreed the state was anomalous.
         attrib_text = "".join(
             f" {name}:{_describe_attribution(attribution, MODEL_JOB_MAP[name])}" for name in anomalous if MODEL_JOB_MAP.get(name)
         )
-        findings.append((
-            "High",
-            f"Anomaly models disagree: {', '.join(anomalous)} anomalous, {', '.join(normal)} normal -- "
-            "possible model-specific drift, not necessarily a real system anomaly."
-            + attrib_text,
-        ))
+        verb = "agree the system state is anomalous" if len(anomalous) > 1 else "flags an anomalous system state"
+        headline = f"{', '.join(anomalous)} {verb}"
+        context = []
+        if normal:
+            context.append(f"{', '.join(normal)} normal")
+        if missing:
+            context.append(f"{', '.join(missing)} reported no data")
+        if context:
+            headline += f" ({'; '.join(context)})"
+        severity = "High" if len(anomalous) > 1 else "Medium"
+        findings.append((severity, headline + "." + attrib_text))
 
     for alert in firing_alerts:
-        job = ALERT_JOB_MAP.get(alert)
-        findings.append(("High", f"Alert firing: {alert}." + (_describe_attribution(attribution, job) if job else "")))
+        name = alert["alertname"]
+        instance = alert.get("instance")
+        if instance in maintenance:
+            # Already covered above as an Info-level "offline as expected"
+            # finding -- a maintenance host still tripping this as a High
+            # firing alert would just reintroduce the same false-alarm
+            # confusion with better labels.
+            continue
+        job = ALERT_JOB_MAP.get(name)
+        detail = f" ({instance})" if instance else ""
+        findings.append(("High", f"Alert firing: {name}{detail}." + (_describe_attribution(attribution, job) if job else "")))
 
     if current.get("ufw_enabled") == 0:
         findings.append(("Critical", "UFW firewall is disabled."))
@@ -428,11 +541,30 @@ def build_findings(current, previous, firing_alerts, windows_health, collector_s
     return findings
 
 
-def render_report(current, previous, firing_alerts, annotations, findings, windows_health, core_snapshot, windows_snapshots):
+
+# Executive Summary caps at this many findings so it can't grow unbounded --
+# a safety valve, not the normal case. Anything cut this way is still in the
+# full Findings table below.
+SUMMARY_MAX_FINDINGS = 8
+
+
+def render_report(current, previous, firing_alerts, annotations, findings, windows_health, core_snapshot, windows_snapshots, maintenance):
     now = datetime.datetime.now()
-    top = findings[:3]
+    # A flat top-3-by-severity slice used to silently drop real findings
+    # once more than 3 existed in a run -- e.g. "18 pending security
+    # update(s)" (Low) never made the summary on a day with a High anomaly
+    # and a Medium score finding ahead of it, even though it's exactly the
+    # kind of thing this report exists to surface. Info findings are the
+    # deliberate exception: they're expected-state notices (e.g. a
+    # maintenance host) already visible in their own section, not something
+    # that needs a person's attention.
+    actionable = [f for f in findings if f[0] != "Info"]
+    top = actionable[:SUMMARY_MAX_FINDINGS]
     if top:
         summary = " ".join(f"**{sev}:** {text}" for sev, text in top)
+        remainder = len(actionable) - len(top)
+        if remainder > 0:
+            summary += f" (+{remainder} more -- see Findings below.)"
     else:
         summary = "No findings above baseline -- Guardian reports a clean bill of health this cycle."
 
@@ -453,9 +585,9 @@ def render_report(current, previous, firing_alerts, annotations, findings, windo
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|---|---|")
-    lines.append(f"| Health Score | {_fmt(current.get('health_score'))} |")
-    lines.append(f"| Security Score | {_fmt(current.get('security_score'))} |")
-    lines.append(f"| AI Risk Score | {_fmt(current.get('ai_risk_score'))} |")
+    lines.append(f"| Health Score | {_fmt_score(current.get('health_score'))} |")
+    lines.append(f"| Security Score | {_fmt_score(current.get('security_score'))} |")
+    lines.append(f"| AI Risk Score | {_fmt_score(current.get('ai_risk_score'))} |")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -476,7 +608,8 @@ def render_report(current, previous, firing_alerts, annotations, findings, windo
         lines.append("| Instance | Health Score |")
         lines.append("|---|---|")
         for instance, score in sorted(windows_health.items()):
-            lines.append(f"| {instance} | {_fmt(score)} |")
+            tag = f" _(maintenance: {maintenance[instance]})_" if instance in maintenance else ""
+            lines.append(f"| {instance} | {_fmt(score)}{tag} |")
     else:
         lines.append("No Windows hosts reporting.")
     lines.append("")
@@ -488,6 +621,11 @@ def render_report(current, previous, firing_alerts, annotations, findings, windo
         for a in annotations:
             ts = datetime.datetime.fromtimestamp(a["time"] / 1000).strftime("%Y-%m-%d %H:%M")
             lines.append(f"- **{ts}** — {a['text']}")
+        most_recent = max(a["time"] for a in annotations) / 1000
+        age_days = (now.timestamp() - most_recent) / 86400
+        if age_days > EVENTS_STALE_DAYS:
+            lines.append("")
+            lines.append(f"*No newer events since the entry above -- {age_days:.0f} days ago. This list is not necessarily recent.*")
     else:
         lines.append("No recent annotated events.")
     lines.append("")
@@ -526,10 +664,12 @@ if __name__ == "__main__":
     windows_health = gather_windows_health()
     collector_staleness = gather_collector_staleness()
     attribution = gather_anomaly_attribution()
-    findings = build_findings(current, previous, firing_alerts, windows_health, collector_staleness, attribution)
+    maintenance = gather_maintenance()
+    decisions = gather_decisions()
+    findings = build_findings(current, previous, firing_alerts, windows_health, collector_staleness, attribution, maintenance, decisions)
     core_snapshot, windows_snapshots = gather_machine_snapshots()
 
-    report_md = render_report(current, previous, firing_alerts, annotations, findings, windows_health, core_snapshot, windows_snapshots)
+    report_md = render_report(current, previous, firing_alerts, annotations, findings, windows_health, core_snapshot, windows_snapshots, maintenance)
 
     out_path = os.path.join(REPO_DIR, f"full_system_report_{datetime.date.today().isoformat()}.md")
     with open(out_path, "w") as f:
